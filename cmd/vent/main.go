@@ -4,7 +4,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/qnighy/vent/internal/interp"
 )
@@ -12,7 +15,9 @@ import (
 const usage = `usage: vent <command> [arguments]
 
 commands:
-  run <file>    run a vent program
+  run <file>                  run a vent program
+  test [-v] <file|dir>...     run the tests (functions named test_*) in each
+                              file; directories are searched for *.vent files
 `
 
 func main() {
@@ -31,6 +36,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runFile(args[1], stdout, stderr)
+	case "test":
+		return testPaths(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usage)
 		return 0
@@ -52,4 +59,52 @@ func runFile(path string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func testPaths(args []string, stdout, stderr io.Writer) int {
+	verbose := false
+	if len(args) > 0 && args[0] == "-v" {
+		verbose = true
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		fmt.Fprint(stderr, usage)
+		return 2
+	}
+	var files []string
+	for _, path := range args {
+		info, err := os.Stat(path)
+		if err != nil {
+			fmt.Fprintf(stderr, "vent: %v\n", err)
+			return 1
+		}
+		if !info.IsDir() {
+			files = append(files, path)
+			continue
+		}
+		err = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && strings.HasSuffix(p, ".vent") {
+				files = append(files, p)
+			}
+			return err
+		})
+		if err != nil {
+			fmt.Fprintf(stderr, "vent: %v\n", err)
+			return 1
+		}
+	}
+
+	status := 0
+	for _, file := range files {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			fmt.Fprintf(stderr, "vent: %v\n", err)
+			status = 1
+			continue
+		}
+		if !interp.RunTests(file, src, stdout, verbose) {
+			status = 1
+		}
+	}
+	return status
 }

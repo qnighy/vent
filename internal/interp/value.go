@@ -112,6 +112,13 @@ func display(v Value) string {
 	return sb.String()
 }
 
+// debug formats v as it appears within composites, with strings quoted.
+func debug(v Value) string {
+	var sb strings.Builder
+	writeValue(&sb, v)
+	return sb.String()
+}
+
 func writeValue(sb *strings.Builder, v Value) {
 	switch v := v.(type) {
 	case StringValue:

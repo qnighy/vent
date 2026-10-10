@@ -43,13 +43,18 @@ type Interp struct {
 	out     io.Writer
 	globals *scope
 	structs map[string]*syntax.StructDecl
+	prog    *syntax.Program
 	depth   int
 }
 
 // Run executes the program in src, writing program output to out.
 // filename is used only for diagnostics.
 func Run(filename string, src []byte, out io.Writer) error {
-	err := run(src, out)
+	return withFilename(filename, run(src, out))
+}
+
+// withFilename prefixes err with filename.
+func withFilename(filename string, err error) error {
 	switch err.(type) {
 	case nil:
 		return nil
@@ -62,36 +67,10 @@ func Run(filename string, src []byte, out io.Writer) error {
 }
 
 func run(src []byte, out io.Writer) error {
-	prog, err := syntax.Parse(src)
+	in, err := load(src, out)
 	if err != nil {
 		return err
 	}
-	in := &Interp{out: out, globals: newScope(nil), structs: map[string]*syntax.StructDecl{}}
-	in.defineBuiltins()
-	// Functions and structs share a namespace for now.
-	defined := func(name string) bool {
-		return in.globals.lookup(name) != nil || in.structs[name] != nil
-	}
-	for _, st := range prog.Structs {
-		if defined(st.Name) {
-			return errorf(st.Pos, "duplicate definition of %s", st.Name)
-		}
-		seen := map[string]bool{}
-		for _, f := range st.Fields {
-			if seen[f.Name] {
-				return errorf(f.Pos, "duplicate field %s in %s", f.Name, st.Name)
-			}
-			seen[f.Name] = true
-		}
-		in.structs[st.Name] = st
-	}
-	for _, fn := range prog.Fns {
-		if defined(fn.Name) {
-			return errorf(fn.Pos, "duplicate definition of %s", fn.Name)
-		}
-		in.globals.define(fn.Name, &FuncValue{Decl: fn}, false)
-	}
-
 	var mainFn *FuncValue
 	if b := in.globals.lookup("main"); b != nil {
 		mainFn, _ = b.value.(*FuncValue)
@@ -104,6 +83,40 @@ func run(src []byte, out io.Writer) error {
 	}
 	_, err = in.callFunc(mainFn.Decl.Pos, mainFn, nil)
 	return err
+}
+
+// load parses src and defines its top-level declarations.
+func load(src []byte, out io.Writer) (*Interp, error) {
+	prog, err := syntax.Parse(src)
+	if err != nil {
+		return nil, err
+	}
+	in := &Interp{out: out, globals: newScope(nil), structs: map[string]*syntax.StructDecl{}, prog: prog}
+	in.defineBuiltins()
+	// Functions and structs share a namespace for now.
+	defined := func(name string) bool {
+		return in.globals.lookup(name) != nil || in.structs[name] != nil
+	}
+	for _, st := range prog.Structs {
+		if defined(st.Name) {
+			return nil, errorf(st.Pos, "duplicate definition of %s", st.Name)
+		}
+		seen := map[string]bool{}
+		for _, f := range st.Fields {
+			if seen[f.Name] {
+				return nil, errorf(f.Pos, "duplicate field %s in %s", f.Name, st.Name)
+			}
+			seen[f.Name] = true
+		}
+		in.structs[st.Name] = st
+	}
+	for _, fn := range prog.Fns {
+		if defined(fn.Name) {
+			return nil, errorf(fn.Pos, "duplicate definition of %s", fn.Name)
+		}
+		in.globals.define(fn.Name, &FuncValue{Decl: fn}, false)
+	}
+	return in, nil
 }
 
 type binding struct {

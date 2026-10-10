@@ -1,0 +1,31 @@
+struct P { x: Int, y: Int }
+
+fn sum(a: Array<Int>) -> Int {
+    var total = 0;
+    var i = 0;
+    while i < a.len() {
+        total += a[i];
+        i += 1;
+    }
+    total
+}
+
+fn test_sum() {
+    assert_eq(sum([]), 0);
+    assert_eq(sum([1, 2, 3]), 6);
+}
+
+fn test_assert() {
+    assert(true);
+    assert(1 < 2, "one is less than two");
+}
+
+fn test_structs() {
+    println("shown only when verbose or failing");
+    assert_eq(P { x: 1, y: 2 }, P { y: 2, x: 1 });
+}
+
+// Not a test: no test_ prefix.
+fn helper() {
+    panic("never called");
+}

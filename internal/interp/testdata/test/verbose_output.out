@@ -1,0 +1,4 @@
+--- PASS: test_first
+    hello from first
+--- PASS: test_second
+ok   verbose_output.vent (2 passed)

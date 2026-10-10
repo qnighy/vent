@@ -1,0 +1,27 @@
+--- FAIL: test_assert_eq_array
+    captured output is shown on failure
+    failing.vent:9:14: runtime error: assertion failed: left == right
+      left: [1, 2, 3]
+     right: [1, 2, 4]
+--- FAIL: test_assert_eq_string
+    failing.vent:13:14: runtime error: assertion failed: left == right
+      left: "a\n"
+     right: "b"
+--- FAIL: test_assert_eq_struct
+    failing.vent:17:14: runtime error: assertion failed: left == right
+      left: P { x: 1, y: 2 }
+     right: P { x: 1, y: 3 }
+--- FAIL: test_assert_message
+    failing.vent:21:11: runtime error: assertion failed: math is broken
+--- FAIL: test_assert_plain
+    failing.vent:25:11: runtime error: assertion failed
+--- FAIL: test_panic
+    failing.vent:29:10: runtime error: panic: something went wrong
+--- FAIL: test_stack_overflow
+    failing.vent:33:12: runtime error: stack overflow
+--- FAIL: test_runtime_error
+    failing.vent:43:6: runtime error: index out of bounds: the length is 1 but the index is 1
+--- FAIL: test_with_param
+    failing.vent:46:1: runtime error: test function must not take parameters
+FAIL failing.vent (9 failed, 2 passed)
+(failed)
