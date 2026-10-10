@@ -47,5 +47,6 @@
 ## Development
 
 - `go run ./cmd/vent run <file>.vent` — run a program
+- `go run ./cmd/vent test [-v] <file|dir>...` — run Vent unit tests: parameterless functions named `test_*`, using the builtins `assert`, `assert_eq` and `panic` (a stopgap until test syntax is designed)
 - `go test ./...` — run all tests
-- Golden tests: `internal/interp/testdata/run/*.vent` + expected `*.out`. Regenerate with `go test ./internal/interp -run TestGolden -update` and review the diff.
+- Golden tests: `internal/interp/testdata/run/*.vent` (programs) and `testdata/test/*.vent` (`vent test` reports) + expected `*.out`. Regenerate with `go test ./internal/interp -run TestGolden -update` and review the diff.

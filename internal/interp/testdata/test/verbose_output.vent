@@ -1,0 +1,5 @@
+fn test_first() {
+    println("hello from first");
+}
+
+fn test_second() {}
