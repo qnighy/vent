@@ -1,0 +1,1 @@
+error: err_syntax_semicolon.vent:3:5: syntax error: expected ";", found identifier "println"

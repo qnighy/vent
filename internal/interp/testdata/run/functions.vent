@@ -1,0 +1,16 @@
+fn apply(f, x) {
+    f(x)
+}
+
+fn double(x: Int) -> Int { x * 2 }
+
+fn even(n: Int) -> Bool { if n == 0 { true } else { odd(n - 1) } }
+fn odd(n: Int) -> Bool { if n == 0 { false } else { even(n - 1) } }
+
+fn main() {
+    println(apply(double, 21));
+    let g = double;
+    println(g(5));
+    println(even(10));
+    println(odd(7));
+}

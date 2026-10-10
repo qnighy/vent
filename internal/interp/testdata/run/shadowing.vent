@@ -1,0 +1,17 @@
+fn main() {
+    let x = 1;
+    println(x);
+    let x = x + 1;
+    println(x);
+    {
+        let x = "inner";
+        println(x);
+    }
+    println(x);
+
+    var y = 10;
+    {
+        y = y + 1;
+    }
+    println(y);
+}

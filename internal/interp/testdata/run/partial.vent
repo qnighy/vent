@@ -1,0 +1,9 @@
+// Code that is never executed is not checked.
+fn broken() {
+    undefined_function(1 + "a")
+}
+
+fn main() {
+    if false { broken(); }
+    println("ok");
+}

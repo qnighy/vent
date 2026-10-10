@@ -1,0 +1,5 @@
+fn f(a, b) { a + b }
+
+fn main() {
+    f(1);
+}

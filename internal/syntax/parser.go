@@ -1,0 +1,382 @@
+package syntax
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// Parse parses a whole source file.
+func Parse(src []byte) (prog *Program, err error) {
+	toks, err := Tokenize(src)
+	if err != nil {
+		return nil, err
+	}
+	p := &parser{toks: toks}
+	defer func() {
+		if r := recover(); r != nil {
+			e, ok := r.(*Error)
+			if !ok {
+				panic(r)
+			}
+			prog, err = nil, e
+		}
+	}()
+	return p.parseProgram(), nil
+}
+
+type parser struct {
+	toks []Token
+	i    int
+	// loops is the stack of enclosing loops within the current function.
+	// An element is true for `loop`, where break may carry a value.
+	loops []bool
+}
+
+func (p *parser) tok() Token {
+	return p.toks[p.i]
+}
+
+func (p *parser) at(kind TokenKind) bool {
+	return p.tok().Kind == kind
+}
+
+func (p *parser) advance() Token {
+	t := p.toks[p.i]
+	if t.Kind != EOF {
+		p.i++
+	}
+	return t
+}
+
+func (p *parser) errorf(pos Pos, format string, args ...any) {
+	panic(&Error{Pos: pos, Msg: fmt.Sprintf(format, args...)})
+}
+
+func (p *parser) unexpected(what string) {
+	p.errorf(p.tok().Pos, "expected %s, found %s", what, p.tok().describe())
+}
+
+func (p *parser) expect(kind TokenKind) Token {
+	if !p.at(kind) {
+		p.unexpected(fmt.Sprintf("%q", kind.String()))
+	}
+	return p.advance()
+}
+
+func (p *parser) expectIdent() Token {
+	if !p.at(Ident) {
+		p.unexpected("identifier")
+	}
+	return p.advance()
+}
+
+func (p *parser) parseProgram() *Program {
+	prog := &Program{}
+	for !p.at(EOF) {
+		if !p.at(KwFn) {
+			p.unexpected(`"fn"`)
+		}
+		prog.Fns = append(prog.Fns, p.parseFn())
+	}
+	return prog
+}
+
+func (p *parser) parseFn() *FnDecl {
+	pos := p.expect(KwFn).Pos
+	name := p.expectIdent()
+	fn := &FnDecl{Pos: pos, Name: name.Text}
+
+	p.expect(LParen)
+	for !p.at(RParen) {
+		pname := p.expectIdent()
+		param := &Param{Pos: pname.Pos, Name: pname.Text}
+		if p.at(Colon) {
+			p.advance()
+			param.Type = p.parseType()
+		}
+		fn.Params = append(fn.Params, param)
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(RParen)
+
+	if p.at(Arrow) {
+		p.advance()
+		fn.Result = p.parseType()
+	}
+
+	outerLoops := p.loops
+	p.loops = nil
+	fn.Body = p.parseBlock()
+	p.loops = outerLoops
+	return fn
+}
+
+func (p *parser) parseType() TypeExpr {
+	switch p.tok().Kind {
+	case Ident:
+		t := p.advance()
+		return &NamedType{Pos: t.Pos, Name: t.Text}
+	case LParen:
+		pos := p.advance().Pos
+		p.expect(RParen)
+		return &UnitType{Pos: pos}
+	default:
+		p.unexpected("type")
+		panic("unreachable")
+	}
+}
+
+func (p *parser) parseBlock() *BlockExpr {
+	block := &BlockExpr{Pos: p.expect(LBrace).Pos}
+	for !p.at(RBrace) {
+		switch p.tok().Kind {
+		case Semicolon:
+			p.advance()
+		case KwLet, KwVar:
+			block.Stmts = append(block.Stmts, p.parseLet())
+		case LBrace, KwIf, KwWhile, KwLoop:
+			// A block-like expression ends the statement without a semicolon.
+			x := p.parseBlockLike()
+			if p.at(RBrace) {
+				block.Tail = x
+			} else {
+				if p.at(Semicolon) {
+					p.advance()
+				}
+				block.Stmts = append(block.Stmts, &ExprStmt{X: x})
+			}
+		default:
+			x := p.parseExpr()
+			switch {
+			case p.at(Semicolon):
+				p.advance()
+				block.Stmts = append(block.Stmts, &ExprStmt{X: x})
+			case p.at(RBrace):
+				block.Tail = x
+			default:
+				p.unexpected(`";" or "}"`)
+			}
+		}
+	}
+	p.expect(RBrace)
+	return block
+}
+
+func (p *parser) parseLet() *LetStmt {
+	kw := p.advance()
+	name := p.expectIdent()
+	s := &LetStmt{Pos: kw.Pos, Mutable: kw.Kind == KwVar, Name: name.Text}
+	if p.at(Colon) {
+		p.advance()
+		s.Type = p.parseType()
+	}
+	p.expect(Assign)
+	s.Value = p.parseExpr()
+	p.expect(Semicolon)
+	return s
+}
+
+func (p *parser) parseExpr() Expr {
+	x := p.parseBinary(precLowest)
+	switch op := p.tok(); op.Kind {
+	case Assign, PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign:
+		target, ok := x.(*IdentExpr)
+		if !ok {
+			p.errorf(op.Pos, "invalid assignment target")
+		}
+		p.advance()
+		return &AssignExpr{Pos: op.Pos, Op: op.Kind, Target: target, Value: p.parseExpr()}
+	}
+	return x
+}
+
+const (
+	precNone = iota
+	precLowest
+	precOr
+	precAnd
+	precCompare
+	precAdd
+	precMul
+)
+
+func binaryPrec(kind TokenKind) int {
+	switch kind {
+	case OrOr:
+		return precOr
+	case AndAnd:
+		return precAnd
+	case Eq, Ne, Lt, Le, Gt, Ge:
+		return precCompare
+	case Plus, Minus:
+		return precAdd
+	case Star, Slash, Percent:
+		return precMul
+	default:
+		return precNone
+	}
+}
+
+func (p *parser) parseBinary(minPrec int) Expr {
+	x := p.parseUnary()
+	compared := false
+	for {
+		op := p.tok()
+		prec := binaryPrec(op.Kind)
+		if prec == precNone || prec < minPrec {
+			return x
+		}
+		if prec == precCompare {
+			if compared {
+				p.errorf(op.Pos, "comparison operators cannot be chained")
+			}
+			compared = true
+		}
+		p.advance()
+		y := p.parseBinary(prec + 1)
+		x = &BinaryExpr{Pos: op.Pos, Op: op.Kind, X: x, Y: y}
+	}
+}
+
+func (p *parser) parseUnary() Expr {
+	switch op := p.tok(); op.Kind {
+	case Minus, Bang:
+		p.advance()
+		return &UnaryExpr{Pos: op.Pos, Op: op.Kind, X: p.parseUnary()}
+	}
+	return p.parsePostfix()
+}
+
+func (p *parser) parsePostfix() Expr {
+	x := p.parsePrimary()
+	for p.at(LParen) {
+		call := &CallExpr{Pos: p.advance().Pos, Fn: x}
+		for !p.at(RParen) {
+			call.Args = append(call.Args, p.parseExpr())
+			if !p.at(Comma) {
+				break
+			}
+			p.advance()
+		}
+		p.expect(RParen)
+		x = call
+	}
+	return x
+}
+
+func (p *parser) parsePrimary() Expr {
+	t := p.tok()
+	switch t.Kind {
+	case Int:
+		p.advance()
+		v, err := strconv.ParseInt(strings.ReplaceAll(t.Text, "_", ""), 10, 64)
+		if err != nil {
+			p.errorf(t.Pos, "integer literal out of range")
+		}
+		return &IntLit{Pos: t.Pos, Value: v}
+	case String:
+		p.advance()
+		return &StringLit{Pos: t.Pos, Value: t.Text}
+	case KwTrue, KwFalse:
+		p.advance()
+		return &BoolLit{Pos: t.Pos, Value: t.Kind == KwTrue}
+	case Ident:
+		p.advance()
+		return &IdentExpr{Pos: t.Pos, Name: t.Text}
+	case LParen:
+		p.advance()
+		if p.at(RParen) {
+			p.advance()
+			return &UnitLit{Pos: t.Pos}
+		}
+		x := p.parseExpr()
+		p.expect(RParen)
+		return x
+	case LBrace, KwIf, KwWhile, KwLoop:
+		return p.parseBlockLike()
+	case KwBreak:
+		p.advance()
+		if len(p.loops) == 0 {
+			p.errorf(t.Pos, "break outside of a loop")
+		}
+		e := &BreakExpr{Pos: t.Pos}
+		if p.canStartExpr() {
+			if !p.loops[len(p.loops)-1] {
+				p.errorf(t.Pos, "break with a value is only allowed in loop")
+			}
+			e.Value = p.parseExpr()
+		}
+		return e
+	case KwContinue:
+		p.advance()
+		if len(p.loops) == 0 {
+			p.errorf(t.Pos, "continue outside of a loop")
+		}
+		return &ContinueExpr{Pos: t.Pos}
+	case KwReturn:
+		p.advance()
+		e := &ReturnExpr{Pos: t.Pos}
+		if p.canStartExpr() {
+			e.Value = p.parseExpr()
+		}
+		return e
+	default:
+		p.unexpected("expression")
+		panic("unreachable")
+	}
+}
+
+func (p *parser) canStartExpr() bool {
+	switch p.tok().Kind {
+	case Int, String, KwTrue, KwFalse, Ident, LParen, LBrace,
+		KwIf, KwWhile, KwLoop, KwBreak, KwContinue, KwReturn, Minus, Bang:
+		return true
+	default:
+		return false
+	}
+}
+
+// parseBlockLike parses a block, if, while or loop expression.
+func (p *parser) parseBlockLike() Expr {
+	t := p.tok()
+	switch t.Kind {
+	case LBrace:
+		return p.parseBlock()
+	case KwIf:
+		return p.parseIf()
+	case KwWhile:
+		p.advance()
+		cond := p.parseExpr()
+		p.loops = append(p.loops, false)
+		body := p.parseBlock()
+		p.loops = p.loops[:len(p.loops)-1]
+		return &WhileExpr{Pos: t.Pos, Cond: cond, Body: body}
+	case KwLoop:
+		p.advance()
+		p.loops = append(p.loops, true)
+		body := p.parseBlock()
+		p.loops = p.loops[:len(p.loops)-1]
+		return &LoopExpr{Pos: t.Pos, Body: body}
+	default:
+		p.unexpected("block")
+		panic("unreachable")
+	}
+}
+
+func (p *parser) parseIf() *IfExpr {
+	pos := p.expect(KwIf).Pos
+	e := &IfExpr{Pos: pos, Cond: p.parseExpr(), Then: p.parseBlock()}
+	if p.at(KwElse) {
+		p.advance()
+		if p.at(KwIf) {
+			e.Else = p.parseIf()
+		} else {
+			e.Else = p.parseBlock()
+		}
+	}
+	return e
+}

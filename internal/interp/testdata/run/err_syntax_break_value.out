@@ -1,0 +1,1 @@
+error: err_syntax_break_value.vent:2:18: syntax error: break with a value is only allowed in loop

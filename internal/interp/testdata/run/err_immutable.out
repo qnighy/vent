@@ -1,0 +1,1 @@
+error: err_immutable.vent:3:7: runtime error: cannot assign to immutable variable x

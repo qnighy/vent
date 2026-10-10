@@ -1,0 +1,19 @@
+fn main() {
+    println(1 + 2 * 3);
+    println((1 + 2) * 3);
+    println(10 - 3 - 2);
+    println(7 / 2);
+    println(-7 / 2);
+    println(7 % 3);
+    println(-7 % 3);
+    println(-(3));
+    println(1_000_000);
+    println(1 < 2 && 2 <= 2);
+    println(1 > 2 || !(3 >= 4));
+    println(1 == 1);
+    println(1 != 1);
+    println((1 < 2) == true);
+    println("ab" + "cd");
+    println("abc" < "abd");
+    println(() == ());
+}

@@ -1,0 +1,10 @@
+fn main() {
+    println("tab:\t|quote:\"|backslash:\\|");
+    println("unicode: \u{3042}\u{1F600} 日本語");
+    print("no newline");
+    print(" ");
+    println("then newline");
+    println();
+    println(println);
+    println(main);
+}

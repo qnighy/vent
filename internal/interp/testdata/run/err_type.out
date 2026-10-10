@@ -1,0 +1,1 @@
+error: err_type.vent:2:15: runtime error: invalid operands for +: Int and Bool

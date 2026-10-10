@@ -1,0 +1,1 @@
+error: err_compare.vent:2:15: runtime error: cannot compare Int and String

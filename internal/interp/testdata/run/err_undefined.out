@@ -1,0 +1,2 @@
+before
+error: err_undefined.vent:3:13: runtime error: undefined variable y

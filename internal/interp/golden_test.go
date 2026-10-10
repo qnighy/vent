@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files with actual output")
@@ -29,7 +31,7 @@ func TestGolden(t *testing.T) {
 				t.Fatal(err)
 			}
 			var out bytes.Buffer
-			if err := Run(file, src, &out); err != nil {
+			if err := Run(name+".vent", src, &out); err != nil {
 				out.WriteString("error: " + err.Error() + "\n")
 			}
 
@@ -44,8 +46,8 @@ func TestGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("missing golden file (run with -update to create): %v", err)
 			}
-			if got := out.String(); got != string(want) {
-				t.Errorf("output mismatch for %s\n--- got ---\n%s--- want ---\n%s", file, got, want)
+			if diff := cmp.Diff(string(want), out.String()); diff != "" {
+				t.Errorf("output mismatch for %s (-want +got):\n%s", file, diff)
 			}
 		})
 	}

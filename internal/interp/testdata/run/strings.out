@@ -1,0 +1,6 @@
+tab:	|quote:"|backslash:\|
+unicode: あ😀 日本語
+no newline then newline
+
+<builtin fn println>
+<fn main>

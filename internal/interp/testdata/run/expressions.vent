@@ -1,0 +1,42 @@
+/* Blocks, if and loop are expressions. /* Comments nest. */ */
+fn sign(x: Int) -> Int {
+    if x < 0 { return -1; }
+    if x == 0 { 0 } else { 1 }
+}
+
+fn main() {
+    let x = {
+        let a = 3;
+        let b = 4;
+        a * a + b * b
+    };
+    println(x);
+
+    let y = if x > 20 { "big" } else { "small" };
+    println(y);
+
+    var n = 1;
+    let p = loop {
+        n *= 2;
+        if n > 1000 { break n; }
+    };
+    println(p);
+
+    var i = 0;
+    var odd_sum = 0;
+    while true {
+        i += 1;
+        if i > 10 { break; }
+        if i % 2 == 0 { continue; }
+        odd_sum += i;
+    }
+    println(odd_sum);
+
+    println(sign(-5));
+    println(sign(0));
+    println(sign(42));
+
+    let unit = {};
+    println(unit);
+    println(if false { 1 });
+}
