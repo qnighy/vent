@@ -1,0 +1,1 @@
+error: err_compare_struct.vent:4:26: runtime error: cannot compare P and fn

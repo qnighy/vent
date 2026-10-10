@@ -1,0 +1,31 @@
+fn main() {
+    var a = [1, 2, 3];
+    println(a);
+    println(a.len());
+    println(a[0] + a[2]);
+
+    a[1] = 20;
+    a[2] += 10;
+    a.push(4);
+    println(a);
+    println(a.pop());
+    println(a);
+
+    let empty: Array<Int> = [];
+    println(empty);
+    println(empty.len());
+
+    // Nested arrays and trailing commas.
+    var grid = [
+        [1, 2],
+        [3, 4],
+    ];
+    grid[1][0] = 30;
+    grid[0].push(5);
+    println(grid);
+    println(grid[1].len());
+
+    // Strings are quoted inside arrays.
+    println(["a", "b\n", "\"c\""]);
+    println([(), true, [[]]]);
+}

@@ -1,0 +1,8 @@
+true
+false
+true
+true
+true
+false
+true
+error: equality.vent:12:30: runtime error: cannot compare P and Q

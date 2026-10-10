@@ -1,0 +1,1 @@
+error: err_index_type.vent:3:15: runtime error: array index must be Int, got String

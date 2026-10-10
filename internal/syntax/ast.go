@@ -2,7 +2,21 @@ package syntax
 
 // Program is a whole source file.
 type Program struct {
-	Fns []*FnDecl
+	Fns     []*FnDecl
+	Structs []*StructDecl
+}
+
+// StructDecl is a top-level struct declaration: struct Name { field: Type, ... }
+type StructDecl struct {
+	Pos    Pos
+	Name   string
+	Fields []*FieldDecl
+}
+
+type FieldDecl struct {
+	Pos  Pos
+	Name string
+	Type TypeExpr
 }
 
 // FnDecl is a top-level function declaration: fn name(params) -> Result { Body }
@@ -26,9 +40,11 @@ type TypeExpr interface {
 	Position() Pos
 }
 
+// NamedType is a type name with optional type arguments, such as Int or Array<Int>.
 type NamedType struct {
 	Pos  Pos
 	Name string
+	Args []TypeExpr
 }
 
 // UnitType is the type ().
@@ -112,11 +128,54 @@ type BinaryExpr struct {
 }
 
 // AssignExpr is `target = value` or a compound assignment like `target += value`.
+// Target is a place expression: an *IdentExpr, *IndexExpr or *FieldExpr.
 type AssignExpr struct {
 	Pos    Pos       // position of the operator
 	Op     TokenKind // Assign, PlusAssign, ...
-	Target *IdentExpr
+	Target Expr
 	Value  Expr
+}
+
+// ArrayLit is `[elems, ...]`.
+type ArrayLit struct {
+	Pos   Pos
+	Elems []Expr
+}
+
+// StructLit is `Name { field: value, ... }`.
+type StructLit struct {
+	Pos    Pos
+	Name   string
+	Fields []*FieldInit
+}
+
+// FieldInit is `name: value` in a struct literal. The shorthand `name` sets Value to an *IdentExpr.
+type FieldInit struct {
+	Pos   Pos
+	Name  string
+	Value Expr
+}
+
+// IndexExpr is `x[index]`.
+type IndexExpr struct {
+	Pos   Pos // position of '['
+	X     Expr
+	Index Expr
+}
+
+// FieldExpr is `x.name`.
+type FieldExpr struct {
+	Pos  Pos // position of the field name
+	X    Expr
+	Name string
+}
+
+// MethodCallExpr is `recv.name(args)`.
+type MethodCallExpr struct {
+	Pos  Pos // position of the method name
+	Recv Expr
+	Name string
+	Args []Expr
 }
 
 type CallExpr struct {
@@ -165,36 +224,46 @@ type ReturnExpr struct {
 	Value Expr // nil if omitted
 }
 
-func (*IntLit) exprNode()       {}
-func (*StringLit) exprNode()    {}
-func (*BoolLit) exprNode()      {}
-func (*UnitLit) exprNode()      {}
-func (*IdentExpr) exprNode()    {}
-func (*UnaryExpr) exprNode()    {}
-func (*BinaryExpr) exprNode()   {}
-func (*AssignExpr) exprNode()   {}
-func (*CallExpr) exprNode()     {}
-func (*BlockExpr) exprNode()    {}
-func (*IfExpr) exprNode()       {}
-func (*WhileExpr) exprNode()    {}
-func (*LoopExpr) exprNode()     {}
-func (*BreakExpr) exprNode()    {}
-func (*ContinueExpr) exprNode() {}
-func (*ReturnExpr) exprNode()   {}
+func (*IntLit) exprNode()         {}
+func (*StringLit) exprNode()      {}
+func (*BoolLit) exprNode()        {}
+func (*UnitLit) exprNode()        {}
+func (*IdentExpr) exprNode()      {}
+func (*UnaryExpr) exprNode()      {}
+func (*BinaryExpr) exprNode()     {}
+func (*AssignExpr) exprNode()     {}
+func (*CallExpr) exprNode()       {}
+func (*ArrayLit) exprNode()       {}
+func (*StructLit) exprNode()      {}
+func (*IndexExpr) exprNode()      {}
+func (*FieldExpr) exprNode()      {}
+func (*MethodCallExpr) exprNode() {}
+func (*BlockExpr) exprNode()      {}
+func (*IfExpr) exprNode()         {}
+func (*WhileExpr) exprNode()      {}
+func (*LoopExpr) exprNode()       {}
+func (*BreakExpr) exprNode()      {}
+func (*ContinueExpr) exprNode()   {}
+func (*ReturnExpr) exprNode()     {}
 
-func (e *IntLit) Position() Pos       { return e.Pos }
-func (e *StringLit) Position() Pos    { return e.Pos }
-func (e *BoolLit) Position() Pos      { return e.Pos }
-func (e *UnitLit) Position() Pos      { return e.Pos }
-func (e *IdentExpr) Position() Pos    { return e.Pos }
-func (e *UnaryExpr) Position() Pos    { return e.Pos }
-func (e *BinaryExpr) Position() Pos   { return e.Pos }
-func (e *AssignExpr) Position() Pos   { return e.Pos }
-func (e *CallExpr) Position() Pos     { return e.Pos }
-func (e *BlockExpr) Position() Pos    { return e.Pos }
-func (e *IfExpr) Position() Pos       { return e.Pos }
-func (e *WhileExpr) Position() Pos    { return e.Pos }
-func (e *LoopExpr) Position() Pos     { return e.Pos }
-func (e *BreakExpr) Position() Pos    { return e.Pos }
-func (e *ContinueExpr) Position() Pos { return e.Pos }
-func (e *ReturnExpr) Position() Pos   { return e.Pos }
+func (e *IntLit) Position() Pos         { return e.Pos }
+func (e *StringLit) Position() Pos      { return e.Pos }
+func (e *BoolLit) Position() Pos        { return e.Pos }
+func (e *UnitLit) Position() Pos        { return e.Pos }
+func (e *IdentExpr) Position() Pos      { return e.Pos }
+func (e *UnaryExpr) Position() Pos      { return e.Pos }
+func (e *BinaryExpr) Position() Pos     { return e.Pos }
+func (e *AssignExpr) Position() Pos     { return e.Pos }
+func (e *CallExpr) Position() Pos       { return e.Pos }
+func (e *ArrayLit) Position() Pos       { return e.Pos }
+func (e *StructLit) Position() Pos      { return e.Pos }
+func (e *IndexExpr) Position() Pos      { return e.Pos }
+func (e *FieldExpr) Position() Pos      { return e.Pos }
+func (e *MethodCallExpr) Position() Pos { return e.Pos }
+func (e *BlockExpr) Position() Pos      { return e.Pos }
+func (e *IfExpr) Position() Pos         { return e.Pos }
+func (e *WhileExpr) Position() Pos      { return e.Pos }
+func (e *LoopExpr) Position() Pos       { return e.Pos }
+func (e *BreakExpr) Position() Pos      { return e.Pos }
+func (e *ContinueExpr) Position() Pos   { return e.Pos }
+func (e *ReturnExpr) Position() Pos     { return e.Pos }

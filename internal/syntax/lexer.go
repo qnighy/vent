@@ -178,8 +178,14 @@ func (l *lexer) next() (Token, error) {
 		return one(LBrace), nil
 	case '}':
 		return one(RBrace), nil
+	case '[':
+		return one(LBracket), nil
+	case ']':
+		return one(RBracket), nil
 	case ',':
 		return one(Comma), nil
+	case '.':
+		return one(Dot), nil
 	case ';':
 		return one(Semicolon), nil
 	case ':':

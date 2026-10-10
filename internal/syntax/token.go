@@ -43,15 +43,19 @@ const (
 	KwReturn
 	KwTrue
 	KwFalse
+	KwStruct
 
 	// Punctuation
 	LParen
 	RParen
 	LBrace
 	RBrace
+	LBracket
+	RBracket
 	Comma
 	Semicolon
 	Colon
+	Dot
 	Arrow
 
 	// Operators
@@ -95,14 +99,18 @@ var tokenNames = [...]string{
 	KwReturn:   "return",
 	KwTrue:     "true",
 	KwFalse:    "false",
+	KwStruct:   "struct",
 
 	LParen:    "(",
 	RParen:    ")",
 	LBrace:    "{",
 	RBrace:    "}",
+	LBracket:  "[",
+	RBracket:  "]",
 	Comma:     ",",
 	Semicolon: ";",
 	Colon:     ":",
+	Dot:       ".",
 	Arrow:     "->",
 
 	Plus:          "+",
@@ -147,6 +155,7 @@ var keywords = map[string]TokenKind{
 	"return":   KwReturn,
 	"true":     KwTrue,
 	"false":    KwFalse,
+	"struct":   KwStruct,
 }
 
 // Token is a lexical token.

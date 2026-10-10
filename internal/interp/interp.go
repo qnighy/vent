@@ -42,6 +42,7 @@ func (*returnSignal) Error() string   { return "return outside of a function" }
 type Interp struct {
 	out     io.Writer
 	globals *scope
+	structs map[string]*syntax.StructDecl
 	depth   int
 }
 
@@ -65,10 +66,27 @@ func run(src []byte, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	in := &Interp{out: out, globals: newScope(nil)}
+	in := &Interp{out: out, globals: newScope(nil), structs: map[string]*syntax.StructDecl{}}
 	in.defineBuiltins()
+	// Functions and structs share a namespace for now.
+	defined := func(name string) bool {
+		return in.globals.lookup(name) != nil || in.structs[name] != nil
+	}
+	for _, st := range prog.Structs {
+		if defined(st.Name) {
+			return errorf(st.Pos, "duplicate definition of %s", st.Name)
+		}
+		seen := map[string]bool{}
+		for _, f := range st.Fields {
+			if seen[f.Name] {
+				return errorf(f.Pos, "duplicate field %s in %s", f.Name, st.Name)
+			}
+			seen[f.Name] = true
+		}
+		in.structs[st.Name] = st
+	}
 	for _, fn := range prog.Fns {
-		if in.globals.lookup(fn.Name) != nil {
+		if defined(fn.Name) {
 			return errorf(fn.Pos, "duplicate definition of %s", fn.Name)
 		}
 		in.globals.define(fn.Name, &FuncValue{Decl: fn}, false)
@@ -172,14 +190,29 @@ func (in *Interp) eval(e syntax.Expr, sc *scope) (Value, error) {
 		return BoolValue(e.Value), nil
 	case *syntax.UnitLit:
 		return UnitValue{}, nil
-	case *syntax.IdentExpr:
-		b := sc.lookup(e.Name)
-		if b == nil {
-			return nil, errorf(e.Pos, "undefined variable %s", e.Name)
+	case *syntax.IdentExpr, *syntax.IndexExpr, *syntax.FieldExpr:
+		// The value is copied out of a place.
+		v, err := in.evalRead(e, sc)
+		if err != nil {
+			return nil, err
 		}
-		return b.value, nil
+		return share(v), nil
+	case *syntax.ArrayLit:
+		elems := make([]Value, len(e.Elems))
+		for i, x := range e.Elems {
+			v, err := in.eval(x, sc)
+			if err != nil {
+				return nil, err
+			}
+			elems[i] = v
+		}
+		return &ArrayValue{Elems: elems}, nil
+	case *syntax.StructLit:
+		return in.evalStructLit(e, sc)
+	case *syntax.MethodCallExpr:
+		return in.evalMethodCall(e, sc)
 	case *syntax.UnaryExpr:
-		x, err := in.eval(e.X, sc)
+		x, err := in.evalRead(e.X, sc)
 		if err != nil {
 			return nil, err
 		}
@@ -274,7 +307,13 @@ func (in *Interp) evalIf(e *syntax.IfExpr, sc *scope) (Value, error) {
 }
 
 func (in *Interp) evalBinary(e *syntax.BinaryExpr, sc *scope) (Value, error) {
-	x, err := in.eval(e.X, sc)
+	var x Value
+	var err error
+	if isSimple(e.Y) {
+		x, err = in.evalRead(e.X, sc)
+	} else {
+		x, err = in.eval(e.X, sc)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +325,7 @@ func (in *Interp) evalBinary(e *syntax.BinaryExpr, sc *scope) (Value, error) {
 		if bool(b) == (e.Op == syntax.OrOr) {
 			return b, nil
 		}
-		y, err := in.eval(e.Y, sc)
+		y, err := in.evalRead(e.Y, sc)
 		if err != nil {
 			return nil, err
 		}
@@ -295,7 +334,7 @@ func (in *Interp) evalBinary(e *syntax.BinaryExpr, sc *scope) (Value, error) {
 		}
 		return y, nil
 	}
-	y, err := in.eval(e.Y, sc)
+	y, err := in.evalRead(e.Y, sc)
 	if err != nil {
 		return nil, err
 	}
@@ -311,24 +350,32 @@ var compoundOps = map[syntax.TokenKind]syntax.TokenKind{
 }
 
 func (in *Interp) evalAssign(e *syntax.AssignExpr, sc *scope) (Value, error) {
-	b := sc.lookup(e.Target.Name)
-	if b == nil {
-		return nil, errorf(e.Target.Pos, "undefined variable %s", e.Target.Name)
+	pl, err := in.evalPlace(e.Target, sc)
+	if err != nil {
+		return nil, err
 	}
-	if !b.mutable {
-		return nil, errorf(e.Pos, "cannot assign to immutable variable %s", e.Target.Name)
+	if err := pl.checkWritable(e.Pos, "assign to"); err != nil {
+		return nil, err
 	}
 	v, err := in.eval(e.Value, sc)
 	if err != nil {
 		return nil, err
 	}
 	if op, ok := compoundOps[e.Op]; ok {
-		v, err = binaryOp(e.Pos, op, b.value, v)
+		cur, err := pl.read()
+		if err != nil {
+			return nil, err
+		}
+		v, err = binaryOp(e.Pos, op, cur, v)
 		if err != nil {
 			return nil, err
 		}
 	}
-	b.value = v
+	slot, err := pl.slot()
+	if err != nil {
+		return nil, err
+	}
+	*slot = v
 	return UnitValue{}, nil
 }
 
@@ -337,12 +384,15 @@ func (in *Interp) evalCall(e *syntax.CallExpr, sc *scope) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	args := make([]Value, len(e.Args))
-	for i, arg := range e.Args {
-		args[i], err = in.eval(arg, sc)
-		if err != nil {
-			return nil, err
-		}
+	var args []Value
+	if _, ok := callee.(*BuiltinValue); ok {
+		// Builtins do not retain their arguments.
+		args, err = in.evalOperands(e.Args, sc)
+	} else {
+		args, err = in.evalArgs(e.Args, sc)
+	}
+	if err != nil {
+		return nil, err
 	}
 	switch callee := callee.(type) {
 	case *FuncValue:
@@ -451,8 +501,32 @@ func intOp(pos syntax.Pos, op syntax.TokenKind, x, y IntValue) (Value, error) {
 	return nil, errorf(pos, "invalid operands for %v: Int and Int", op)
 }
 
+// equal implements == as structural equality.
+// There is deliberately no shortcut for identical composites: it must not be
+// observable whether two composites share their storage.
 func equal(pos syntax.Pos, x, y Value) (bool, error) {
 	switch x := x.(type) {
+	case *ArrayValue:
+		if y, ok := y.(*ArrayValue); ok {
+			if len(x.Elems) != len(y.Elems) {
+				return false, nil
+			}
+			for i := range x.Elems {
+				if eq, err := equal(pos, x.Elems[i], y.Elems[i]); err != nil || !eq {
+					return false, err
+				}
+			}
+			return true, nil
+		}
+	case *StructValue:
+		if y, ok := y.(*StructValue); ok && x.Decl == y.Decl {
+			for i := range x.Fields {
+				if eq, err := equal(pos, x.Fields[i], y.Fields[i]); err != nil || !eq {
+					return false, err
+				}
+			}
+			return true, nil
+		}
 	case IntValue:
 		if y, ok := y.(IntValue); ok {
 			return x == y, nil
