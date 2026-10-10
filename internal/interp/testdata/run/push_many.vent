@@ -1,0 +1,13 @@
+// Pushing into an unshared array must not copy it each time.
+fn main() {
+    var a = [];
+    var i = 0;
+    while i < 200000 {
+        a.push(i);
+        if a.len() % 50000 == 0 {
+            println(a.len());
+        }
+        i += 1;
+    }
+    println(a[a.len() - 1]);
+}

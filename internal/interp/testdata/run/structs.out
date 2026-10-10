@@ -1,0 +1,9 @@
+Point { x: 1, y: 2 }
+1
+Point { x: 2, y: 20 }
+Point { x: 5, y: 7 }
+Point { x: 7, y: 27 }
+Segment { from: Point { x: 2, y: 20 }, to: Point { x: 100, y: 7 } }
+Empty {}
+[Point { x: 2, y: 20 }, Point { x: 5, y: 0 }]
+equal

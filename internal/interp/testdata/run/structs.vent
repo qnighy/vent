@@ -1,0 +1,43 @@
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+struct Segment { from: Point, to: Point }
+
+struct Empty {}
+
+fn add(p: Point, q: Point) -> Point {
+    Point { x: p.x + q.x, y: p.y + q.y }
+}
+
+fn main() {
+    var p = Point { x: 1, y: 2 };
+    println(p);
+    println(p.x);
+    p.y = 20;
+    p.x += 1;
+    println(p);
+
+    // Field order in a literal does not matter; shorthand fields.
+    let x = 5;
+    let y = 6;
+    let q = Point { y: y + 1, x };
+    println(q);
+    println(add(p, q));
+
+    var s = Segment { from: p, to: q };
+    s.to.x = 100;
+    println(s);
+    println(Empty {});
+
+    var points = [p, q];
+    points[1].y = 0;
+    println(points);
+
+    // A struct literal is not allowed directly in a condition,
+    // but it is allowed inside parentheses.
+    if p == (Point { x: 2, y: 20 }) {
+        println("equal");
+    }
+}

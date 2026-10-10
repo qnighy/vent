@@ -1,0 +1,1 @@
+error: err_immutable_push.vent:3:7: runtime error: cannot mutate immutable variable a

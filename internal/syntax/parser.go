@@ -31,6 +31,9 @@ type parser struct {
 	// loops is the stack of enclosing loops within the current function.
 	// An element is true for `loop`, where break may carry a value.
 	loops []bool
+	// noStructLit forbids struct literals, as in `if x == S {} {}` where the
+	// first `{` must start the block. Nested brackets lift the restriction.
+	noStructLit bool
 }
 
 func (p *parser) tok() Token {
@@ -74,12 +77,34 @@ func (p *parser) expectIdent() Token {
 func (p *parser) parseProgram() *Program {
 	prog := &Program{}
 	for !p.at(EOF) {
-		if !p.at(KwFn) {
-			p.unexpected(`"fn"`)
+		switch p.tok().Kind {
+		case KwFn:
+			prog.Fns = append(prog.Fns, p.parseFn())
+		case KwStruct:
+			prog.Structs = append(prog.Structs, p.parseStruct())
+		default:
+			p.unexpected(`"fn" or "struct"`)
 		}
-		prog.Fns = append(prog.Fns, p.parseFn())
 	}
 	return prog
+}
+
+func (p *parser) parseStruct() *StructDecl {
+	pos := p.expect(KwStruct).Pos
+	name := p.expectIdent()
+	decl := &StructDecl{Pos: pos, Name: name.Text}
+	p.expect(LBrace)
+	for !p.at(RBrace) {
+		fname := p.expectIdent()
+		p.expect(Colon)
+		decl.Fields = append(decl.Fields, &FieldDecl{Pos: fname.Pos, Name: fname.Text, Type: p.parseType()})
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(RBrace)
+	return decl
 }
 
 func (p *parser) parseFn() *FnDecl {
@@ -119,7 +144,19 @@ func (p *parser) parseType() TypeExpr {
 	switch p.tok().Kind {
 	case Ident:
 		t := p.advance()
-		return &NamedType{Pos: t.Pos, Name: t.Text}
+		typ := &NamedType{Pos: t.Pos, Name: t.Text}
+		if p.at(Lt) {
+			p.advance()
+			for {
+				typ.Args = append(typ.Args, p.parseType())
+				if !p.at(Comma) {
+					break
+				}
+				p.advance()
+			}
+			p.expect(Gt)
+		}
+		return typ
 	case LParen:
 		pos := p.advance().Pos
 		p.expect(RParen)
@@ -131,6 +168,7 @@ func (p *parser) parseType() TypeExpr {
 }
 
 func (p *parser) parseBlock() *BlockExpr {
+	defer p.allowStructLit()()
 	block := &BlockExpr{Pos: p.expect(LBrace).Pos}
 	for !p.at(RBrace) {
 		switch p.tok().Kind {
@@ -184,14 +222,53 @@ func (p *parser) parseExpr() Expr {
 	x := p.parseBinary(precLowest)
 	switch op := p.tok(); op.Kind {
 	case Assign, PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign:
-		target, ok := x.(*IdentExpr)
-		if !ok {
+		if !isPlace(x) {
 			p.errorf(op.Pos, "invalid assignment target")
 		}
 		p.advance()
-		return &AssignExpr{Pos: op.Pos, Op: op.Kind, Target: target, Value: p.parseExpr()}
+		return &AssignExpr{Pos: op.Pos, Op: op.Kind, Target: x, Value: p.parseExpr()}
 	}
 	return x
+}
+
+func isPlace(x Expr) bool {
+	switch x.(type) {
+	case *IdentExpr, *IndexExpr, *FieldExpr:
+		return true
+	default:
+		return false
+	}
+}
+
+// allowStructLit lifts the noStructLit restriction until the returned function is called.
+func (p *parser) allowStructLit() (restore func()) {
+	old := p.noStructLit
+	p.noStructLit = false
+	return func() { p.noStructLit = old }
+}
+
+// parseCondition parses the condition of if or while, where struct literals are not allowed.
+func (p *parser) parseCondition() Expr {
+	old := p.noStructLit
+	p.noStructLit = true
+	defer func() { p.noStructLit = old }()
+	return p.parseExpr()
+}
+
+// parseExprList parses comma-separated expressions up to (and including) the closing token.
+// A trailing comma is allowed.
+func (p *parser) parseExprList(end TokenKind) []Expr {
+	defer p.allowStructLit()()
+	var xs []Expr
+	for !p.at(end) {
+		xs = append(xs, p.parseExpr())
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(end)
+	return xs
 }
 
 const (
@@ -253,19 +330,54 @@ func (p *parser) parseUnary() Expr {
 
 func (p *parser) parsePostfix() Expr {
 	x := p.parsePrimary()
-	for p.at(LParen) {
-		call := &CallExpr{Pos: p.advance().Pos, Fn: x}
-		for !p.at(RParen) {
-			call.Args = append(call.Args, p.parseExpr())
-			if !p.at(Comma) {
-				break
-			}
+	for {
+		switch t := p.tok(); t.Kind {
+		case LParen:
 			p.advance()
+			x = &CallExpr{Pos: t.Pos, Fn: x, Args: p.parseExprList(RParen)}
+		case LBracket:
+			p.advance()
+			restore := p.allowStructLit()
+			index := p.parseExpr()
+			restore()
+			p.expect(RBracket)
+			x = &IndexExpr{Pos: t.Pos, X: x, Index: index}
+		case Dot:
+			p.advance()
+			name := p.expectIdent()
+			if p.at(LParen) {
+				p.advance()
+				x = &MethodCallExpr{Pos: name.Pos, Recv: x, Name: name.Text, Args: p.parseExprList(RParen)}
+			} else {
+				x = &FieldExpr{Pos: name.Pos, X: x, Name: name.Text}
+			}
+		default:
+			return x
 		}
-		p.expect(RParen)
-		x = call
 	}
-	return x
+}
+
+func (p *parser) parseStructLit(name Token) *StructLit {
+	p.expect(LBrace)
+	defer p.allowStructLit()()
+	lit := &StructLit{Pos: name.Pos, Name: name.Text}
+	for !p.at(RBrace) {
+		fname := p.expectIdent()
+		init := &FieldInit{Pos: fname.Pos, Name: fname.Text}
+		if p.at(Colon) {
+			p.advance()
+			init.Value = p.parseExpr()
+		} else {
+			init.Value = &IdentExpr{Pos: fname.Pos, Name: fname.Text}
+		}
+		lit.Fields = append(lit.Fields, init)
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(RBrace)
+	return lit
 }
 
 func (p *parser) parsePrimary() Expr {
@@ -286,6 +398,9 @@ func (p *parser) parsePrimary() Expr {
 		return &BoolLit{Pos: t.Pos, Value: t.Kind == KwTrue}
 	case Ident:
 		p.advance()
+		if p.at(LBrace) && !p.noStructLit {
+			return p.parseStructLit(t)
+		}
 		return &IdentExpr{Pos: t.Pos, Name: t.Text}
 	case LParen:
 		p.advance()
@@ -293,9 +408,14 @@ func (p *parser) parsePrimary() Expr {
 			p.advance()
 			return &UnitLit{Pos: t.Pos}
 		}
+		restore := p.allowStructLit()
 		x := p.parseExpr()
+		restore()
 		p.expect(RParen)
 		return x
+	case LBracket:
+		p.advance()
+		return &ArrayLit{Pos: t.Pos, Elems: p.parseExprList(RBracket)}
 	case LBrace, KwIf, KwWhile, KwLoop:
 		return p.parseBlockLike()
 	case KwBreak:
@@ -332,7 +452,7 @@ func (p *parser) parsePrimary() Expr {
 
 func (p *parser) canStartExpr() bool {
 	switch p.tok().Kind {
-	case Int, String, KwTrue, KwFalse, Ident, LParen, LBrace,
+	case Int, String, KwTrue, KwFalse, Ident, LParen, LBracket, LBrace,
 		KwIf, KwWhile, KwLoop, KwBreak, KwContinue, KwReturn, Minus, Bang:
 		return true
 	default:
@@ -350,7 +470,7 @@ func (p *parser) parseBlockLike() Expr {
 		return p.parseIf()
 	case KwWhile:
 		p.advance()
-		cond := p.parseExpr()
+		cond := p.parseCondition()
 		p.loops = append(p.loops, false)
 		body := p.parseBlock()
 		p.loops = p.loops[:len(p.loops)-1]
@@ -369,7 +489,7 @@ func (p *parser) parseBlockLike() Expr {
 
 func (p *parser) parseIf() *IfExpr {
 	pos := p.expect(KwIf).Pos
-	e := &IfExpr{Pos: pos, Cond: p.parseExpr(), Then: p.parseBlock()}
+	e := &IfExpr{Pos: pos, Cond: p.parseCondition(), Then: p.parseBlock()}
 	if p.at(KwElse) {
 		p.advance()
 		if p.at(KwIf) {

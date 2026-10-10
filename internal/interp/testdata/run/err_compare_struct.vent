@@ -1,0 +1,5 @@
+struct P { x: Int }
+
+fn main() {
+    println([P { x: 1 }] == [main]);
+}

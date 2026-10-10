@@ -1,0 +1,54 @@
+// Composite values are values: no assignment, call or return makes two
+// places observe each other's mutations.
+
+struct Box { items: Array<Int> }
+
+fn mutate_param(a: Array<Int>) -> Array<Int> {
+    var a = a;
+    a.push(99);
+    a
+}
+
+fn main() {
+    var a = [1, 2];
+    var b = a;
+    b.push(3);
+    a[0] = 10;
+    println(a);
+    println(b);
+
+    let c = mutate_param(a);
+    println(a);
+    println(c);
+
+    // Nested values are independent too.
+    var outer = [[1], [2]];
+    var inner = outer[0];
+    inner.push(100);
+    outer[1].push(200);
+    let snapshot = outer;
+    outer[0][0] = 0;
+    println(inner);
+    println(outer);
+    println(snapshot);
+
+    var x = Box { items: [1] };
+    var y = x;
+    y.items.push(2);
+    println(x);
+    println(y);
+
+    // An array pushed into itself holds its previous value.
+    var self_ref = [1];
+    self_ref.push(self_ref.len());
+    println(self_ref);
+    var nested = [[0]];
+    nested.push(nested[0]);
+    nested[0].push(1);
+    println(nested);
+
+    // Operands are evaluated left to right.
+    var z = [1];
+    println(z == { z.push(2); z });
+    println(z);
+}

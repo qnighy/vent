@@ -1,0 +1,46 @@
+// Insertion sort and the sieve of Eratosthenes.
+
+fn sort(a: Array<Int>) -> Array<Int> {
+    var a = a;
+    var i = 1;
+    while i < a.len() {
+        let x = a[i];
+        var j = i;
+        while j > 0 && a[j - 1] > x {
+            a[j] = a[j - 1];
+            j -= 1;
+        }
+        a[j] = x;
+        i += 1;
+    }
+    a
+}
+
+fn primes(n: Int) -> Array<Int> {
+    var sieve = [];
+    var i = 0;
+    while i <= n {
+        sieve.push(i >= 2);
+        i += 1;
+    }
+    var result = [];
+    i = 2;
+    while i <= n {
+        if sieve[i] {
+            result.push(i);
+            var j = i * i;
+            while j <= n {
+                sieve[j] = false;
+                j += i;
+            }
+        }
+        i += 1;
+    }
+    result
+}
+
+fn main() {
+    println(sort([5, 3, 9, 1, 4, 1, 8]));
+    println(sort([]));
+    println(primes(50));
+}
