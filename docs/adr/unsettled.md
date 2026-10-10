@@ -29,6 +29,12 @@
   - 渡し方を明示するオプション?
     - Rust のように immutable reference を lifetime 共々明示する需要は考えられるので、「入力を x: T と書くと自動的に x: &T として実現される場合があり、所定の構文でオプトアウト」といった整理も考えられる。
 - &mut T 相当のものの扱いは原則 Rust と同じ (ライフタイムを持ち ownership を持つが、 reborrowing によって ownership がある程度隠蔽される)。ただ、何らかの sugar で書きやすくすることは考えられる。また、 &mut T からの読み出しの auto-clone 処理については underspecified な部分が残っている。
+  - これには two-phase borrow 相当のパターンなど write-read hazard のケースの判断も含まれる。
+
+## Auto-clone 仕様の leak について
+
+- Rust が NLL を仕様としているのと同様、 Vent の auto-clone の振る舞いは仕様の一部である。 CFG への変換および生存解析の手順がそのまま仕様化されるイメージ。
+- clone できない場合のエラーの発生条件や clone のコスト管理は処理系依存にしない。
 
 ## Leibniz equality
 
@@ -50,6 +56,27 @@ Closure with implicit capture と closure with explicit capture で扱いが異�
 
 - closure with implicit capture は比較不可能、あるいは synthetic identity (closure 式ごとに unique) で提供する。
 - closure with explicit capture は式ノードの同一性と capture の等価性で比較される。ジェネリクスとの兼ね合いについては要検討。また、式ノードの同一性基準をどこまで hoist するかについては不確定。少なくとも、同じ module source であっても module instance が異なれば別の closure に解決されなければならない。
+
+## Map / Set
+
+Map / Set について、まず大前提は「ハッシュ順序を露出しない」かつ「Leibniz equality のルールを守る」。これを守る実装はいくつかあるが、どの形態を標準提供するかは悩みどころ。
+
+たとえば、 Go 方式 (キー順序をもたない) で提供し、キー列挙の方法として
+
+- pure total total order を使ってソートして取得 (total total = 比較不能も計算不可能もない)
+- pure total monoid を使って reduce して取得
+
+を与えるという方法は考えられるが、問題がキー型の提供方式に移ってしまう。
+
+これとは別にキー順序を記憶する assoc array を提供することも考えられる。これは JSON などの扱いでしばしば自然な選択肢である。しかし、 Leibniz equality の関係で、 assoc array の == はユーザーの期待に反する可能性がある。
+
+## 浮動小数点数
+
+浮動小数点数は全ての有限値と正負の無限大、そして単一の NaN からなる集合とみなす。 IEEE 754 に定める比較は別の演算子として提供する。 f64 を含む型の Leibniz 比較は一貫性の観点からむしろ言語レベルで明示的に許可するが、かわりに lint によって怪しいパターンを発見的に報告する。
+
+## クロージャによる書き込みキャプチャの扱い
+
+クロージャが外部環境に書き込む場合はデフォルトで reference capture とする (Rust における move capture 相当を書きやすくする手段は別途検討)。 exclusive mutable reference をとってキャプチャするため、 lifetime の制約が発生する。
 
 ## I/O effect の扱い
 
