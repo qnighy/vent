@@ -43,3 +43,9 @@
 - インタプリタ実装時は、仕様を詰めるよりも大方針を固めることを目標にする。プロトタイプを先行させ、軌道修正が必要な箇所について人間が指示する。この時点では、全てのコンセプトが実装されている必要はない。 (たとえばエフェクトシステムの整理は後ろ倒しになる可能性が高い)
 - セルフホスト時には仕様を固めながら進める。仕様が決まった部分から実装していく。
 - コミュニティー貢献は現時点では想定しない
+
+## Development
+
+- `go run ./cmd/vent run <file>.vent` — run a program
+- `go test ./...` — run all tests
+- Golden tests: `internal/interp/testdata/run/*.vent` + expected `*.out`. Regenerate with `go test ./internal/interp -run TestGolden -update` and review the diff.
