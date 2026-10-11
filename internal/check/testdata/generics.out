@@ -1,0 +1,14 @@
+generics.vent:2:19: static error: bounds are not allowed on type parameters of structs and enums
+generics.vent:3:15: static error: duplicate type parameter T
+generics.vent:4:21: static error: undefined type Undefined
+generics.vent:5:17: static error: undefined trait Nope
+generics.vent:6:20: static error: Self is only available in traits and impls
+generics.vent:7:13: static error: Pair expects 2 type arguments, got 1
+generics.vent:7:27: static error: Pair expects 2 type arguments, got 3
+generics.vent:7:51: static error: E expects 1 type argument, got 0
+generics.vent:15:18: static error: mismatched types: expected Int, found T
+generics.vent:16:5: static error: mismatched types: expected T, found Int
+generics.vent:23:34: static error: mismatched types: expected Pair<Int, Int>, found Pair<Int, String>
+generics.vent:25:22: static error: invalid operands for +: String and Int
+generics.vent:27:24: static error: mismatched types: expected E<String>, found E<Int>
+generics.vent:31:13: static error: cannot mutate immutable variable x

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/qnighy/vent/internal/check"
 	"github.com/qnighy/vent/internal/syntax"
 )
 
@@ -21,9 +22,18 @@ type StringValue string
 
 type UnitValue struct{}
 
-// FuncValue is a user-defined function.
+// FuncValue is a user-defined function or method. Env binds the type
+// parameters in scope of its body.
 type FuncValue struct {
 	Decl *syntax.FnDecl
+	Env  check.Env
+}
+
+// VariantValue is the constructor of an enum variant with fields, which
+// makes an EnumValue when called.
+type VariantValue struct {
+	Decl    *syntax.EnumDecl
+	Variant int
 }
 
 // BuiltinValue is a function implemented in Go.
@@ -43,6 +53,15 @@ type StructValue struct {
 	Decl   *syntax.StructDecl
 	Fields []Value
 	shared bool
+}
+
+// EnumValue is a value of a user-defined enum. Fields are those of the
+// variant. An EnumValue is never written in place, so it needs no copy on
+// write; its fields are shared when matched out.
+type EnumValue struct {
+	Decl    *syntax.EnumDecl
+	Variant int
+	Fields  []Value
 }
 
 // Composite values have value semantics, implemented by copy-on-write.
@@ -98,7 +117,9 @@ func (StringValue) TypeName() string    { return "String" }
 func (UnitValue) TypeName() string      { return "()" }
 func (*ArrayValue) TypeName() string    { return "Array" }
 func (v *StructValue) TypeName() string { return v.Decl.Name }
+func (v *EnumValue) TypeName() string   { return v.Decl.Name }
 func (*FuncValue) TypeName() string     { return "fn" }
+func (*VariantValue) TypeName() string  { return "fn" }
 func (*BuiltinValue) TypeName() string  { return "fn" }
 
 // display formats v as print/println show it.
@@ -148,6 +169,19 @@ func writeValue(sb *strings.Builder, v Value) {
 			writeValue(sb, f)
 		}
 		sb.WriteString(" }")
+	case *EnumValue:
+		sb.WriteString(v.Decl.Name + "::" + v.Decl.Variants[v.Variant].Name)
+		if len(v.Fields) == 0 {
+			return
+		}
+		sb.WriteByte('(')
+		for i, f := range v.Fields {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			writeValue(sb, f)
+		}
+		sb.WriteByte(')')
 	default:
 		sb.WriteString(displayScalar(v))
 	}
@@ -190,6 +224,8 @@ func displayScalar(v Value) string {
 		return "<fn " + v.Decl.Name + ">"
 	case *BuiltinValue:
 		return "<builtin fn " + v.Name + ">"
+	case *VariantValue:
+		return "<fn " + v.Decl.Name + "::" + v.Decl.Variants[v.Variant].Name + ">"
 	default:
 		panic("unknown value type")
 	}

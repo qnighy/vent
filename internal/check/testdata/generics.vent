@@ -1,0 +1,32 @@
+struct Pair<A, B> { first: A, second: B }
+struct Bounded<T: Eq> { value: T }
+struct Dup<T, T> { value: T }
+enum E<T> { A(T), B(Undefined) }
+fn bad_bound<T: Nope>(x: T) {}
+fn self_outside(x: Self) {}
+fn arity(a: Pair<Int>, b: Pair<Int, Int, Int>, c: E, d: E<Int>) {}
+
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> {
+    Pair { first: p.second, second: p.first }
+}
+
+// Type parameters are rigid within their function.
+fn rigid<T>(x: T) -> T {
+    let y: Int = x;
+    1
+}
+
+fn main() {
+    // Type arguments are inferred.
+    let p = Pair { first: 1, second: "a" };
+    let q: Pair<String, Int> = swap(p);
+    let r: Pair<Int, Int> = swap(p);
+    let s = p.first + 1;
+    let t = p.second + 1;
+    let u = E::A(1);
+    let v: E<String> = u;
+    var w = E::A;
+    w = E::B;
+    let x = Pair { first: [], second: [] };
+    x.first.push(1);
+}

@@ -79,20 +79,125 @@ func (p *parser) parseProgram() *Program {
 	for !p.at(EOF) {
 		switch p.tok().Kind {
 		case KwFn:
-			prog.Fns = append(prog.Fns, p.parseFn())
+			prog.Fns = append(prog.Fns, p.parseFn(false))
 		case KwStruct:
 			prog.Structs = append(prog.Structs, p.parseStruct())
+		case KwEnum:
+			prog.Enums = append(prog.Enums, p.parseEnum())
+		case KwTrait:
+			prog.Traits = append(prog.Traits, p.parseTrait())
+		case KwImpl:
+			prog.Impls = append(prog.Impls, p.parseImpl())
 		default:
-			p.unexpected(`"fn" or "struct"`)
+			p.unexpected(`"fn", "struct", "enum", "trait" or "impl"`)
 		}
 	}
 	return prog
 }
 
+// parseTypeParams parses an optional `<T: Bound + Bound, U>`.
+func (p *parser) parseTypeParams() []*TypeParam {
+	if !p.at(Lt) {
+		return nil
+	}
+	p.advance()
+	var params []*TypeParam
+	for !p.at(Gt) {
+		name := p.expectIdent()
+		param := &TypeParam{Pos: name.Pos, Name: name.Text}
+		if p.at(Colon) {
+			p.advance()
+			for {
+				bound := p.expectIdent()
+				param.Bounds = append(param.Bounds, &NamedType{Pos: bound.Pos, Name: bound.Text})
+				if !p.at(Plus) {
+					break
+				}
+				p.advance()
+			}
+		}
+		params = append(params, param)
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(Gt)
+	return params
+}
+
+func (p *parser) parseEnum() *EnumDecl {
+	pos := p.expect(KwEnum).Pos
+	name := p.expectIdent()
+	decl := &EnumDecl{Pos: pos, Name: name.Text, TypeParams: p.parseTypeParams()}
+	p.expect(LBrace)
+	for !p.at(RBrace) {
+		vname := p.expectIdent()
+		v := &VariantDecl{Pos: vname.Pos, Name: vname.Text}
+		if p.at(LParen) {
+			p.advance()
+			for !p.at(RParen) {
+				v.Fields = append(v.Fields, p.parseType())
+				if !p.at(Comma) {
+					break
+				}
+				p.advance()
+			}
+			p.expect(RParen)
+		}
+		decl.Variants = append(decl.Variants, v)
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(RBrace)
+	return decl
+}
+
+func (p *parser) parseTrait() *TraitDecl {
+	pos := p.expect(KwTrait).Pos
+	name := p.expectIdent()
+	decl := &TraitDecl{Pos: pos, Name: name.Text}
+	p.expect(LBrace)
+	for !p.at(RBrace) {
+		if !p.at(KwFn) {
+			p.unexpected(`"fn" or "}"`)
+		}
+		decl.Methods = append(decl.Methods, p.parseFn(true))
+	}
+	p.expect(RBrace)
+	return decl
+}
+
+func (p *parser) parseImpl() *ImplDecl {
+	pos := p.expect(KwImpl).Pos
+	decl := &ImplDecl{Pos: pos, TypeParams: p.parseTypeParams()}
+	decl.Self = p.parseType()
+	if p.at(KwFor) {
+		trait, ok := decl.Self.(*NamedType)
+		if !ok || len(trait.Args) != 0 {
+			p.errorf(decl.Self.Position(), "expected a trait name")
+		}
+		p.advance()
+		decl.Trait = trait
+		decl.Self = p.parseType()
+	}
+	p.expect(LBrace)
+	for !p.at(RBrace) {
+		if !p.at(KwFn) {
+			p.unexpected(`"fn" or "}"`)
+		}
+		decl.Methods = append(decl.Methods, p.parseFn(false))
+	}
+	p.expect(RBrace)
+	return decl
+}
+
 func (p *parser) parseStruct() *StructDecl {
 	pos := p.expect(KwStruct).Pos
 	name := p.expectIdent()
-	decl := &StructDecl{Pos: pos, Name: name.Text}
+	decl := &StructDecl{Pos: pos, Name: name.Text, TypeParams: p.parseTypeParams()}
 	p.expect(LBrace)
 	for !p.at(RBrace) {
 		fname := p.expectIdent()
@@ -107,10 +212,11 @@ func (p *parser) parseStruct() *StructDecl {
 	return decl
 }
 
-func (p *parser) parseFn() *FnDecl {
+// parseFn parses a function. If bodyOptional is set, `;` may replace the body.
+func (p *parser) parseFn(bodyOptional bool) *FnDecl {
 	pos := p.expect(KwFn).Pos
 	name := p.expectIdent()
-	fn := &FnDecl{Pos: pos, Name: name.Text}
+	fn := &FnDecl{Pos: pos, Name: name.Text, TypeParams: p.parseTypeParams()}
 
 	p.expect(LParen)
 	for !p.at(RParen) {
@@ -133,6 +239,10 @@ func (p *parser) parseFn() *FnDecl {
 		fn.Result = p.parseType()
 	}
 
+	if bodyOptional && p.at(Semicolon) {
+		p.advance()
+		return fn
+	}
 	outerLoops := p.loops
 	p.loops = nil
 	fn.Body = p.parseBlock()
@@ -192,7 +302,7 @@ func (p *parser) parseBlock() *BlockExpr {
 			p.advance()
 		case KwLet, KwVar:
 			block.Stmts = append(block.Stmts, p.parseLet())
-		case LBrace, KwIf, KwWhile, KwLoop:
+		case LBrace, KwIf, KwWhile, KwLoop, KwMatch:
 			// A block-like expression ends the statement without a semicolon.
 			x := p.parseBlockLike()
 			if p.at(RBrace) {
@@ -414,6 +524,11 @@ func (p *parser) parsePrimary() Expr {
 		return &BoolLit{Pos: t.Pos, Value: t.Kind == KwTrue}
 	case Ident:
 		p.advance()
+		if p.at(ColonColon) {
+			p.advance()
+			name := p.expectIdent()
+			return &PathExpr{Pos: t.Pos, Qual: t.Text, Name: name.Text}
+		}
 		if p.at(LBrace) && !p.noStructLit {
 			return p.parseStructLit(t)
 		}
@@ -432,7 +547,7 @@ func (p *parser) parsePrimary() Expr {
 	case LBracket:
 		p.advance()
 		return &ArrayLit{Pos: t.Pos, Elems: p.parseExprList(RBracket)}
-	case LBrace, KwIf, KwWhile, KwLoop:
+	case LBrace, KwIf, KwWhile, KwLoop, KwMatch:
 		return p.parseBlockLike()
 	case KwBreak:
 		p.advance()
@@ -469,14 +584,14 @@ func (p *parser) parsePrimary() Expr {
 func (p *parser) canStartExpr() bool {
 	switch p.tok().Kind {
 	case Int, String, KwTrue, KwFalse, Ident, LParen, LBracket, LBrace,
-		KwIf, KwWhile, KwLoop, KwBreak, KwContinue, KwReturn, Minus, Bang:
+		KwIf, KwWhile, KwLoop, KwMatch, KwBreak, KwContinue, KwReturn, Minus, Bang:
 		return true
 	default:
 		return false
 	}
 }
 
-// parseBlockLike parses a block, if, while or loop expression.
+// parseBlockLike parses a block, if, while, loop or match expression.
 func (p *parser) parseBlockLike() Expr {
 	t := p.tok()
 	switch t.Kind {
@@ -497,6 +612,8 @@ func (p *parser) parseBlockLike() Expr {
 		body := p.parseBlock()
 		p.loops = p.loops[:len(p.loops)-1]
 		return &LoopExpr{Pos: t.Pos, Body: body}
+	case KwMatch:
+		return p.parseMatch()
 	default:
 		p.unexpected("block")
 		panic("unreachable")
@@ -515,4 +632,128 @@ func (p *parser) parseIf() *IfExpr {
 		}
 	}
 	return e
+}
+
+func (p *parser) parseMatch() *MatchExpr {
+	pos := p.expect(KwMatch).Pos
+	e := &MatchExpr{Pos: pos, X: p.parseCondition()}
+	p.expect(LBrace)
+	defer p.allowStructLit()()
+	for !p.at(RBrace) {
+		pat := p.parsePattern()
+		arm := &MatchArm{Pos: pat.Position(), Pattern: pat}
+		if p.at(KwIf) {
+			p.advance()
+			arm.Guard = p.parseExpr()
+		}
+		p.expect(FatArrow)
+		switch p.tok().Kind {
+		case LBrace, KwIf, KwWhile, KwLoop, KwMatch:
+			// A block-like body needs no comma.
+			arm.Body = p.parseBlockLike()
+			if p.at(Comma) {
+				p.advance()
+			}
+		default:
+			arm.Body = p.parseExpr()
+			if !p.at(RBrace) {
+				if !p.at(Comma) {
+					p.unexpected(`"," or "}"`)
+				}
+				p.advance()
+			}
+		}
+		e.Arms = append(e.Arms, arm)
+	}
+	p.expect(RBrace)
+	return e
+}
+
+func (p *parser) parsePattern() Pattern {
+	pat := p.parsePrimaryPattern()
+	if !p.at(Pipe) {
+		return pat
+	}
+	or := &OrPat{Pos: pat.Position(), Alts: []Pattern{pat}}
+	for p.at(Pipe) {
+		p.advance()
+		or.Alts = append(or.Alts, p.parsePrimaryPattern())
+	}
+	return or
+}
+
+func (p *parser) parsePrimaryPattern() Pattern {
+	t := p.tok()
+	switch t.Kind {
+	case Ident:
+		p.advance()
+		switch {
+		case t.Text == "_":
+			return &WildcardPat{Pos: t.Pos}
+		case p.at(ColonColon):
+			p.advance()
+			name := p.expectIdent()
+			pat := &VariantPat{Pos: t.Pos, Enum: t.Text, Variant: name.Text}
+			if p.at(LParen) {
+				p.advance()
+				for !p.at(RParen) {
+					pat.Elems = append(pat.Elems, p.parsePattern())
+					if !p.at(Comma) {
+						break
+					}
+					p.advance()
+				}
+				p.expect(RParen)
+			}
+			return pat
+		case p.at(LBrace):
+			return p.parseStructPat(t)
+		default:
+			return &BindPat{Pos: t.Pos, Name: t.Text}
+		}
+	case Int, String, KwTrue, KwFalse:
+		return &LitPat{Pos: t.Pos, Value: p.parsePrimary()}
+	case Minus:
+		p.advance()
+		n := p.expect(Int)
+		v, err := strconv.ParseInt("-"+strings.ReplaceAll(n.Text, "_", ""), 10, 64)
+		if err != nil {
+			p.errorf(n.Pos, "integer literal out of range")
+		}
+		return &LitPat{Pos: t.Pos, Value: &IntLit{Pos: t.Pos, Value: v}}
+	case LParen:
+		p.advance()
+		p.expect(RParen)
+		return &LitPat{Pos: t.Pos, Value: &UnitLit{Pos: t.Pos}}
+	default:
+		p.unexpected("pattern")
+		panic("unreachable")
+	}
+}
+
+func (p *parser) parseStructPat(name Token) *StructPat {
+	p.expect(LBrace)
+	pat := &StructPat{Pos: name.Pos, Name: name.Text}
+	for !p.at(RBrace) {
+		if p.at(DotDot) {
+			p.advance()
+			pat.Rest = true
+			break
+		}
+		fname := p.expectIdent()
+		fp := &FieldPat{Pos: fname.Pos, Name: fname.Text}
+		if p.at(Colon) {
+			p.advance()
+			fp.Pattern = p.parsePattern()
+		} else {
+			fp.Pattern = &BindPat{Pos: fname.Pos, Name: fname.Text}
+		}
+		pat.Fields = append(pat.Fields, fp)
+		if !p.at(Comma) {
+			break
+		}
+		p.advance()
+	}
+	p.expect(RBrace)
+	return pat
 }

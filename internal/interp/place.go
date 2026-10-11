@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"github.com/qnighy/vent/internal/check"
 	"github.com/qnighy/vent/internal/syntax"
 )
 
@@ -119,7 +120,7 @@ func (in *Interp) evalArgs(es []syntax.Expr, sc *scope) ([]Value, error) {
 // isSimple reports whether evaluating e cannot mutate any variable.
 func isSimple(e syntax.Expr) bool {
 	switch e := e.(type) {
-	case *syntax.IntLit, *syntax.StringLit, *syntax.BoolLit, *syntax.UnitLit, *syntax.IdentExpr:
+	case *syntax.IntLit, *syntax.StringLit, *syntax.BoolLit, *syntax.UnitLit, *syntax.IdentExpr, *syntax.PathExpr:
 		return true
 	case *syntax.UnaryExpr:
 		return isSimple(e.X)
@@ -214,6 +215,10 @@ func project(v Value, proj projection) (*Value, error) {
 
 func (in *Interp) evalStructLit(e *syntax.StructLit, sc *scope) (Value, error) {
 	decl := in.structs[e.Name]
+	if def := in.info.Structs[e]; def != nil {
+		// The name may be Self.
+		decl = def.Decl
+	}
 	if decl == nil {
 		return nil, errorf(e.Pos, "undefined struct %s", e.Name)
 	}
@@ -283,9 +288,32 @@ var arrayMethods = map[string]*method{
 	}},
 }
 
-// evalMethodCall evaluates recv.name(args). The receiver place is evaluated
-// first, then the arguments, and then the receiver is resolved again.
+// evalMethodCall evaluates recv.name(args). The receiver is evaluated first,
+// then the arguments.
 func (in *Interp) evalMethodCall(e *syntax.MethodCallExpr, sc *scope) (Value, error) {
+	ref := in.info.Refs[e]
+	if ref == nil || ref.Kind == check.RefArrayMethod {
+		return in.evalArrayMethodCall(e, sc)
+	}
+	recv, err := in.eval(e.Recv, sc)
+	if err != nil {
+		return nil, err
+	}
+	args, err := in.evalArgs(e.Args, sc)
+	if err != nil {
+		return nil, err
+	}
+	fn, err := in.funcValue(e.Pos, ref)
+	if err != nil {
+		return nil, err
+	}
+	return in.callFunc(e.Pos, fn, append([]Value{recv}, args...))
+}
+
+// evalArrayMethodCall evaluates a call to a builtin method of Array. The
+// receiver place is evaluated first, then the arguments, and then the
+// receiver is resolved again.
+func (in *Interp) evalArrayMethodCall(e *syntax.MethodCallExpr, sc *scope) (Value, error) {
 	pl, err := in.evalPlace(e.Recv, sc)
 	if err != nil {
 		return nil, err

@@ -3,12 +3,21 @@
 // Checking is local: every function body is checked on its own against the
 // signatures of the top-level declarations.
 //
+// Generic functions are checked once, with their type parameters as rigid
+// types. Which implementation a trait method call runs may depend on the
+// type arguments of the function containing it, so the checker records what
+// each name refers to (see Ref) and the interpreter resolves it with the
+// type arguments of the running function.
+//
 // Types are inferred bottom-up and solved by unification, one constraint at a
 // time in check order, which is the lexical order of the source. The node
 // whose constraint first fails is the one reported. Where the meaning of an
-// operation depends on a type, as + does on Int and String, the type must be
+// operation depends on a type, as + does on Int and String, or a trait
+// method call does on the type implementing the trait, the type must be
 // determined (as far as needed) when the checker reaches the operation:
-// constraints found later cannot change it.
+// constraints found later cannot change it. For a call, "reaching" means
+// having checked the call with its arguments and its expected type, such as
+// that of a let with a type annotation.
 //
 // A program with static errors can still run. Each node that fails to check
 // is "poisoned": evaluating it aborts with its error instead of evaluating it
@@ -40,14 +49,59 @@ type Info struct {
 	// Fatal lists the errors that prevent the program from running at all.
 	Fatal []*Error
 	// Poisoned maps each node that failed to check to its error. Keys are
-	// syntax.Expr, *syntax.LetStmt, *syntax.FnDecl and *syntax.StructDecl.
+	// syntax.Expr, *syntax.LetStmt, *syntax.MatchArm, *syntax.FnDecl,
+	// *syntax.StructDecl, *syntax.EnumDecl and *syntax.ImplDecl.
 	Poisoned map[any]*Error
 	// Types records the type of each expression that checked.
 	Types map[syntax.Expr]Type
+	// Refs records what each reference to a function (*syntax.IdentExpr),
+	// path (*syntax.PathExpr), method call (*syntax.MethodCallExpr) and
+	// variant pattern (*syntax.VariantPat) that checked refers to.
+	Refs map[any]*Ref
+	// Structs records the struct that each struct literal (*syntax.StructLit)
+	// and struct pattern (*syntax.StructPat) that checked names.
+	Structs map[any]*StructDef
+	// Funcs maps each function and method declaration to its signature.
+	Funcs map[*syntax.FnDecl]*Func
+
+	// impls lists the impls of each trait.
+	impls map[*Trait][]*Impl
+}
+
+// RefKind is the kind of a Ref.
+type RefKind int
+
+const (
+	// RefFunc is a function or an inherent method, Func. TypeArgs
+	// instantiate Func.AllTypeParams().
+	RefFunc RefKind = iota
+	// RefTraitMethod is the method Func of Trait, implemented for Self.
+	// TypeArgs instantiate the method's own type parameters. The
+	// implementation is chosen when it runs; see Info.Resolve.
+	RefTraitMethod
+	// RefVariant is the variant Variant of Enum.
+	RefVariant
+	// RefArrayMethod is a builtin method of Array.
+	RefArrayMethod
+)
+
+// Ref is what a name refers to. Its types may refer to the type parameters
+// in scope where the name appears.
+type Ref struct {
+	Kind     RefKind
+	Func     *Func
+	Trait    *Trait
+	Self     Type
+	Enum     *EnumDef
+	Variant  int
+	TypeArgs []Type
 }
 
 // Builtins lists the names of the builtin functions.
 var Builtins = []string{"print", "println", "panic", "assert", "assert_eq"}
+
+// builtinTypes lists the names of the builtin types and traits.
+var builtinTypes = []string{"Int", "Bool", "String", "Array", "Self", "Eq"}
 
 // Check checks prog.
 func Check(prog *syntax.Program) *Info {
@@ -55,18 +109,29 @@ func Check(prog *syntax.Program) *Info {
 		info: &Info{
 			Poisoned: map[any]*Error{},
 			Types:    map[syntax.Expr]Type{},
+			Refs:     map[any]*Ref{},
+			Structs:  map[any]*StructDef{},
+			Funcs:    map[*syntax.FnDecl]*Func{},
+			impls:    map[*Trait][]*Impl{},
 		},
-		structs: map[string]*StructType{},
-		funcs:   map[string]*FuncType{},
+		structs:  map[string]*StructDef{},
+		enums:    map[string]*EnumDef{},
+		traits:   map[string]*Trait{},
+		funcs:    map[string]*Func{},
+		inherent: map[any][]*Func{},
 	}
 	c.declare(prog)
-	for _, fn := range prog.Fns {
-		if c.funcDecls[fn.Name] == fn {
-			c.checkFunc(fn)
-		}
+	for _, f := range c.bodies {
+		c.checkFunc(f)
 	}
 	for e, t := range c.info.Types {
 		c.info.Types[e] = zonk(t)
+	}
+	for _, ref := range c.info.Refs {
+		if ref.Self != nil {
+			ref.Self = zonk(ref.Self)
+		}
+		ref.TypeArgs = zonkAll(ref.TypeArgs)
 	}
 	sort.SliceStable(c.info.Errors, func(i, j int) bool {
 		a, b := c.info.Errors[i].Pos, c.info.Errors[j].Pos
@@ -76,16 +141,29 @@ func Check(prog *syntax.Program) *Info {
 }
 
 type checker struct {
-	info      *Info
-	structs   map[string]*StructType
-	funcs     map[string]*FuncType
-	funcDecls map[string]*syntax.FnDecl
+	info    *Info
+	structs map[string]*StructDef
+	enums   map[string]*EnumDef
+	traits  map[string]*Trait
+	funcs   map[string]*Func
+	// traitOrder lists the traits in declaration order.
+	traitOrder []*Trait
+	// inherent lists the inherent methods of each *StructDef and *EnumDef.
+	inherent map[any][]*Func
+	// bodies lists the functions whose bodies are checked.
+	bodies []*Func
+
+	// Type names in scope: type parameters and Self.
+	tscope map[string]*TypeParam
+	self   Type
 
 	// State for the function being checked.
 	result   Type
 	scope    *scope
 	loops    []*loopCtx
 	deferred []deferred
+	// pending lists the trait obligations yet to be proven.
+	pending []obligation
 }
 
 type variable struct {
@@ -136,126 +214,6 @@ func (c *checker) poison(node any, pos syntax.Pos, format string, args ...any) T
 		c.info.Poisoned[node] = err
 	}
 	return Invalid
-}
-
-// declare collects the top-level declarations and resolves their signatures.
-func (c *checker) declare(prog *syntax.Program) {
-	builtin := map[string]bool{}
-	for _, name := range Builtins {
-		builtin[name] = true
-	}
-	// Functions and structs share a namespace for now.
-	defined := func(name string) bool {
-		return builtin[name] || c.structs[name] != nil || c.funcDecls[name] != nil
-	}
-	c.funcDecls = map[string]*syntax.FnDecl{}
-
-	for _, st := range prog.Structs {
-		if defined(st.Name) {
-			c.fatal(st.Pos, "duplicate definition of %s", st.Name)
-			continue
-		}
-		seen := map[string]bool{}
-		for _, f := range st.Fields {
-			if seen[f.Name] {
-				c.fatal(f.Pos, "duplicate field %s in %s", f.Name, st.Name)
-			}
-			seen[f.Name] = true
-		}
-		c.structs[st.Name] = &StructType{Decl: st}
-	}
-	for _, fn := range prog.Fns {
-		if defined(fn.Name) {
-			c.fatal(fn.Pos, "duplicate definition of %s", fn.Name)
-			continue
-		}
-		c.funcDecls[fn.Name] = fn
-	}
-
-	// Resolve signatures once all names are known.
-	for _, st := range prog.Structs {
-		t := c.structs[st.Name]
-		if t == nil || t.Decl != st {
-			continue
-		}
-		for _, f := range st.Fields {
-			t.Fields = append(t.Fields, c.resolveType(st, f.Type))
-		}
-	}
-	for _, fn := range prog.Fns {
-		if c.funcDecls[fn.Name] != fn {
-			continue
-		}
-		sig := &FuncType{Result: Unit}
-		for _, param := range fn.Params {
-			if param.Type == nil {
-				c.poison(fn, param.Pos, "missing type annotation for parameter %s", param.Name)
-				sig.Params = append(sig.Params, Invalid)
-				continue
-			}
-			sig.Params = append(sig.Params, c.resolveType(fn, param.Type))
-		}
-		if fn.Result != nil {
-			sig.Result = c.resolveType(fn, fn.Result)
-		}
-		c.funcs[fn.Name] = sig
-	}
-}
-
-// resolveType resolves a type annotation, poisoning owner on failure.
-func (c *checker) resolveType(owner any, t syntax.TypeExpr) Type {
-	switch t := t.(type) {
-	case *syntax.UnitType:
-		return Unit
-	case *syntax.FuncType:
-		ft := &FuncType{Result: Unit}
-		valid := true
-		for _, p := range t.Params {
-			pt := c.resolveType(owner, p)
-			valid = valid && !isInvalid(pt)
-			ft.Params = append(ft.Params, pt)
-		}
-		if t.Result != nil {
-			ft.Result = c.resolveType(owner, t.Result)
-			valid = valid && !isInvalid(ft.Result)
-		}
-		if !valid {
-			return Invalid
-		}
-		return ft
-	case *syntax.NamedType:
-		if t.Name == "Array" {
-			if len(t.Args) != 1 {
-				return c.poison(owner, t.Pos, "Array expects 1 type argument, got %d", len(t.Args))
-			}
-			elem := c.resolveType(owner, t.Args[0])
-			if isInvalid(elem) {
-				return Invalid
-			}
-			return &ArrayType{Elem: elem}
-		}
-		var typ Type
-		switch t.Name {
-		case "Int":
-			typ = Int
-		case "Bool":
-			typ = Bool
-		case "String":
-			typ = String
-		default:
-			st := c.structs[t.Name]
-			if st == nil {
-				return c.poison(owner, t.Pos, "undefined type %s", t.Name)
-			}
-			typ = st
-		}
-		if len(t.Args) != 0 {
-			return c.poison(owner, t.Pos, "%s does not take type arguments", t.Name)
-		}
-		return typ
-	default:
-		panic(fmt.Sprintf("unknown type expression %T", t))
-	}
 }
 
 // CheckFile parses and checks src. It returns every error in source order,

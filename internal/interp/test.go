@@ -34,9 +34,12 @@ func RunTests(filename string, src []byte, out io.Writer, verbose bool) bool {
 		}
 		captured.Reset()
 		var err error
-		if len(decl.Params) != 0 {
+		switch {
+		case len(decl.Params) != 0:
 			err = errorf(decl.Pos, "test function must not take parameters")
-		} else {
+		case len(decl.TypeParams) != 0:
+			err = errorf(decl.Pos, "test function must not have type parameters")
+		default:
 			_, err = in.callFunc(decl.Pos, &FuncValue{Decl: decl}, nil)
 		}
 		if err == nil {

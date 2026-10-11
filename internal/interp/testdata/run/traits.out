@@ -1,0 +1,27 @@
+3
+a
+plus
+minus
+"s"
+Some(minus)
+[Some("a"), None]
+plusplus
+twice s
+plus
+minus
+plus;minus;
+"x";"y";
+[plus];[plus, minus];
+0
+true
+Option::None
+Pair { first: 0, second: Pair { first: "", second: Option::None } }
+[0, 0, 0]
+["", ""]
+Pair { first: "one", second: 1 }
+true
+1
+2
+true
+2
+1
