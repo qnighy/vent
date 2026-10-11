@@ -1,0 +1,43 @@
+fn main() {
+    // A conflict is reported where it is found in check order.
+    var a = [];
+    a.push(1);
+    a.push("x");
+
+    // + means different things on Int and String, so the operand type must be
+    // known when the checker reaches it, even if a later use determines it.
+    let b = [];
+    println(b[0] + b[1]);
+    var b2 = [];
+    println(b2[0] < b2[1]);
+    b2.push(1);
+
+    // Method calls and field accesses depend on the receiver type.
+    let c = [];
+    c[0].len();
+    let d = [];
+    d[0].x;
+
+    // Infinite type.
+    var e = [];
+    e.push(e);
+
+    // Comparability does not affect what == does, so it is checked once the
+    // function has been checked. The error is still reported at ==.
+    var f = [];
+    let g = f == f;
+    f.push(main);
+}
+
+// Check order is lexical order, not execution order.
+fn lexical_order() {
+    var a = [];
+    var i = 0;
+    while i < 2 {
+        if i == 1 {
+            println(a[0] + a[0]);
+        }
+        a.push(1);
+        i += 1;
+    }
+}

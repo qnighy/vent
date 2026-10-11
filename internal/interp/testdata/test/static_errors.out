@@ -1,0 +1,24 @@
+--- FAIL: test_operands_not_evaluated
+    before
+    static_errors.vent:30:29: static error: invalid operands for +: Int and Bool
+--- FAIL: test_earlier_arguments_evaluated
+    first
+    static_errors.vent:34:39: static error: cannot compare Int and String
+--- FAIL: test_bad_signature
+    before
+    static_errors.vent:6:21: static error: undefined type Unknown
+--- FAIL: test_broken_struct
+    static_errors.vent:4:20: static error: undefined type Unknown
+--- FAIL: test_bad_let
+    static_errors.vent:47:12: static error: undefined type Unknown
+--- FAIL: test_missing_value
+    static_errors.vent:10:27: static error: mismatched types: expected Int, found ()
+--- FAIL: test_undefined_in_loop
+    0
+    1
+    2
+    static_errors.vent:59:13: static error: undefined variable undefined_function
+--- FAIL: test_lexical_order
+    static_errors.vent:74:20: static error: mismatched types: expected String, found Int
+FAIL static_errors.vent (8 failed, 1 passed)
+(failed)

@@ -1,1 +1,1 @@
-error: err_stack_overflow.vent:1:12: runtime error: stack overflow
+error: err_stack_overflow.vent:1:24: runtime error: stack overflow

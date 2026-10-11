@@ -1,1 +1,1 @@
-error: err_missing_field.vent:4:13: runtime error: missing field y in P
+error: err_missing_field.vent:4:13: static error: missing field y in P

@@ -38,5 +38,5 @@ fn main() {
 
     let unit = {};
     println(unit);
-    println(if false { 1 });
+    println(if false { 1; });
 }

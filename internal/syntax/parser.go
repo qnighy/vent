@@ -161,6 +161,22 @@ func (p *parser) parseType() TypeExpr {
 		pos := p.advance().Pos
 		p.expect(RParen)
 		return &UnitType{Pos: pos}
+	case KwFn:
+		typ := &FuncType{Pos: p.advance().Pos}
+		p.expect(LParen)
+		for !p.at(RParen) {
+			typ.Params = append(typ.Params, p.parseType())
+			if !p.at(Comma) {
+				break
+			}
+			p.advance()
+		}
+		p.expect(RParen)
+		if p.at(Arrow) {
+			p.advance()
+			typ.Result = p.parseType()
+		}
+		return typ
 	default:
 		p.unexpected("type")
 		panic("unreachable")

@@ -1,0 +1,78 @@
+// Code with static errors runs until a node that failed to check is
+// evaluated. That node aborts without evaluating its subexpressions.
+
+struct Broken { x: Unknown }
+
+fn bad_signature(x: Unknown) {
+    println("body of bad_signature");
+}
+
+fn missing_value() -> Int {
+    println("body of missing_value");
+}
+
+fn side(s: String) -> Int {
+    println(s);
+    1
+}
+
+fn add(x: Int, y: Int) -> Int { x + y }
+
+fn test_unexecuted_error() {
+    if false {
+        println(1 + true);
+    }
+    println("reached");
+}
+
+fn test_operands_not_evaluated() {
+    println("before");
+    println(side("operand") + true);
+}
+
+fn test_earlier_arguments_evaluated() {
+    add(side("first"), side("second") == "x");
+}
+
+fn test_bad_signature() {
+    println("before");
+    bad_signature(1);
+}
+
+fn test_broken_struct() {
+    Broken { x: side("field") };
+}
+
+fn test_bad_let() {
+    let x: Unknown = side("initializer");
+}
+
+fn test_missing_value() {
+    missing_value();
+}
+
+fn test_undefined_in_loop() {
+    var i = 0;
+    while i < 3 {
+        println(i);
+        if i == 2 {
+            undefined_function();
+        }
+        i += 1;
+    }
+}
+
+// The second push is reported, since it comes later in the source, although
+// it is executed first.
+fn test_lexical_order() {
+    var a = [];
+    var i = 0;
+    while i < 2 {
+        if i == 1 {
+            a.push("x");
+        } else {
+            a.push(1);
+        }
+        i += 1;
+    }
+}

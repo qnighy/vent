@@ -1,1 +1,1 @@
-error: err_no_method.vent:3:7: runtime error: no method len on Int
+error: err_no_method.vent:3:7: static error: no method len on Int

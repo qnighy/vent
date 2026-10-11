@@ -1,0 +1,13 @@
+fn main() {
+    println(x);
+    let a = 1;
+    {
+        let b = 2;
+    }
+    println(b);
+    a = 2;
+    main = main;
+    let y = undefined_fn(1, 2);
+    println(y + 1); // no cascading error: y has an invalid type
+    P { x: 1 };
+}

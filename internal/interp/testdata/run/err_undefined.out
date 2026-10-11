@@ -1,2 +1,2 @@
 before
-error: err_undefined.vent:3:13: runtime error: undefined variable y
+error: err_undefined.vent:3:13: static error: undefined variable y

@@ -1,0 +1,37 @@
+types.vent:5:23: static error: mismatched types: expected String, found Int
+types.vent:9:15: static error: mismatched types: expected Int, found ()
+types.vent:12:18: static error: mismatched types: expected Int, found String
+types.vent:13:15: static error: invalid operands for +: Int and Bool
+types.vent:14:13: static error: invalid operand for unary -: String
+types.vent:15:13: static error: invalid operand for unary !: Int
+types.vent:16:24: static error: cannot compare P and Q
+types.vent:17:17: static error: invalid operands for <: String and Int
+types.vent:18:17: static error: mismatched types: expected Int, found String
+types.vent:20:8: static error: mismatched types: expected Bool, found Int
+types.vent:21:11: static error: mismatched types: expected Bool, found String
+types.vent:22:34: static error: mismatched types: expected Int, found String
+types.vent:23:18: static error: mismatched types: expected Int, found ()
+types.vent:23:28: static error: mismatched types: expected (), found Int
+types.vent:24:47: static error: mismatched types: expected Int, found String
+types.vent:26:6: static error: n expects 1 arguments, got 2
+types.vent:28:6: static error: cannot call a value of type Int
+types.vent:29:20: static error: mismatched types: expected Int, found String
+types.vent:30:23: static error: field x specified more than once
+types.vent:31:13: static error: missing field x in P
+types.vent:31:17: static error: no field y on P
+types.vent:32:13: static error: missing field x in P
+types.vent:33:15: static error: no field y on P
+types.vent:34:15: static error: cannot access field x of Int
+types.vent:35:14: static error: cannot index into a value of type Int
+types.vent:36:17: static error: mismatched types: expected Int, found Bool
+types.vent:38:9: static error: invalid operands for +: Array<Int> and Int
+types.vent:39:14: static error: mismatched types: expected Int, found String
+types.vent:40:9: static error: push expects 1 arguments, got 0
+types.vent:41:9: static error: len expects 0 arguments, got 1
+types.vent:42:7: static error: no method len on Int
+types.vent:43:10: static error: print expects 1 arguments, got 0
+types.vent:44:12: static error: println expects 0 or 1 arguments, got 2
+types.vent:45:10: static error: panic expects 1 arguments, got 0
+types.vent:46:12: static error: mismatched types: expected Bool, found Int
+types.vent:47:14: static error: cannot compare Int and String
+types.vent:48:14: static error: cannot compare fn() and fn()

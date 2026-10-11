@@ -1,0 +1,41 @@
+// Types are inferred bottom-up by unification.
+fn main() {
+    // The element type is determined by a later use.
+    var a = [];
+    a.push(1);
+
+    // Nested: b's element type is Array<_> after the first push, and String
+    // after the second.
+    var b = [];
+    b.push([]);
+    b[0].push("x");
+
+    // A type that is never determined is fine where nothing depends on it.
+    let c = [];
+    println(c.len());
+    println(c == []);
+
+    // - is only defined on Int, so it determines d's element type.
+    var d = [];
+    if d.len() > 0 {
+        println(d[0] - 1);
+    }
+    d.push(2);
+
+    // One operand of + is enough to determine the other.
+    var e = [];
+    println(e.len() + 0);
+    if e.len() > 0 {
+        println(e[0] + "!");
+    }
+
+    let f = [[], [1]];
+    let g = if true { [] } else { ["s"] };
+    let h = loop {
+        if true { break []; }
+        break [1];
+    };
+    var i = [];
+    i.push(i.len());
+    println(f == [] && g == [] && h == []);
+}
