@@ -1,1 +1,1 @@
-error: err_compare_struct.vent:4:30: static error: mismatched types: expected P, found fn()
+error: err_compare_struct.vent:4:26: static error: cannot compare Array<P> and Array<fn()>

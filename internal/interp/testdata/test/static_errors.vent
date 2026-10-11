@@ -61,3 +61,18 @@ fn test_undefined_in_loop() {
         i += 1;
     }
 }
+
+// The second push is reported, since it comes later in the source, although
+// it is executed first.
+fn test_lexical_order() {
+    var a = [];
+    var i = 0;
+    while i < 2 {
+        if i == 1 {
+            a.push("x");
+        } else {
+            a.push(1);
+        }
+        i += 1;
+    }
+}

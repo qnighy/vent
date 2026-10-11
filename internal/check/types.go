@@ -23,17 +23,25 @@ var (
 	Unit   = &Basic{"()"}
 )
 
-// NeverType is the type of expressions that never produce a value, such as return.
+// NeverType is the type of expressions that never produce a value, such as
+// return. It unifies with every type without determining it.
 type NeverType struct{}
 
-// InvalidType is the type of expressions that failed to check. It is
-// compatible with every type so that one mistake is reported only once.
+// InvalidType is the type of expressions that failed to check. It unifies
+// with every type without determining it, so that one mistake is reported
+// only once.
 type InvalidType struct{}
 
 var (
 	Never   = &NeverType{}
 	Invalid = &InvalidType{}
 )
+
+// TypeVar is a type yet to be determined by unification.
+type TypeVar struct {
+	// ref is the type the variable is bound to, or nil if unbound.
+	ref Type
+}
 
 type ArrayType struct {
 	Elem Type
@@ -64,6 +72,14 @@ func (t *ArrayType) String() string   { return "Array<" + t.Elem.String() + ">" 
 func (t *StructType) String() string  { return t.Decl.Name }
 func (t *BuiltinType) String() string { return "builtin " + t.Name }
 
+// String shows an unbound variable as _.
+func (t *TypeVar) String() string {
+	if t.ref == nil {
+		return "_"
+	}
+	return t.ref.String()
+}
+
 func (t *FuncType) String() string {
 	var sb strings.Builder
 	sb.WriteString("fn(")
@@ -74,7 +90,7 @@ func (t *FuncType) String() string {
 		sb.WriteString(p.String())
 	}
 	sb.WriteString(")")
-	if t.Result != Unit {
+	if prune(t.Result) != Unit {
 		sb.WriteString(" -> " + t.Result.String())
 	}
 	return sb.String()
@@ -89,45 +105,13 @@ func (t *StructType) field(name string) (Type, bool) {
 	return nil, false
 }
 
-// identical reports whether a and b are the same type.
-func identical(a, b Type) bool {
-	switch a := a.(type) {
-	case *ArrayType:
-		b, ok := b.(*ArrayType)
-		return ok && identical(a.Elem, b.Elem)
-	case *FuncType:
-		b, ok := b.(*FuncType)
-		if !ok || len(a.Params) != len(b.Params) || !identical(a.Result, b.Result) {
-			return false
-		}
-		for i := range a.Params {
-			if !identical(a.Params[i], b.Params[i]) {
-				return false
-			}
-		}
-		return true
-	case *BuiltinType:
-		b, ok := b.(*BuiltinType)
-		return ok && a.Name == b.Name
-	default:
-		return a == b
-	}
-}
-
-// assignable reports whether a value of type src can be used where dst is expected.
-func assignable(src, dst Type) bool {
-	if isInvalid(src) || isInvalid(dst) || src == Never {
-		return true
-	}
-	return identical(src, dst)
-}
-
 func isInvalid(t Type) bool {
-	return t == Invalid
+	return prune(t) == Invalid
 }
 
-// comparable reports whether == is defined on t: it is structural equality,
-// which functions do not have.
+// comparable reports whether == may be defined on t: it is structural
+// equality, which functions do not have. Undetermined parts are assumed to be
+// comparable.
 func comparable(t Type) bool {
 	return comparableRec(t, map[*StructType]bool{})
 }
@@ -135,8 +119,8 @@ func comparable(t Type) bool {
 // comparableRec is comparable for possibly recursive types. A struct already
 // being visited is assumed to be comparable.
 func comparableRec(t Type, visiting map[*StructType]bool) bool {
-	switch t := t.(type) {
-	case *Basic, *InvalidType:
+	switch t := prune(t).(type) {
+	case *Basic, *InvalidType, *NeverType, *TypeVar:
 		return true
 	case *ArrayType:
 		return comparableRec(t.Elem, visiting)

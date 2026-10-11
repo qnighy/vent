@@ -7,11 +7,10 @@ types.vent:15:13: static error: invalid operand for unary !: Int
 types.vent:16:24: static error: cannot compare P and Q
 types.vent:17:17: static error: invalid operands for <: String and Int
 types.vent:18:17: static error: mismatched types: expected Int, found String
-types.vent:19:13: static error: cannot infer the element type of an empty array; add a type annotation
 types.vent:20:8: static error: mismatched types: expected Bool, found Int
 types.vent:21:11: static error: mismatched types: expected Bool, found String
 types.vent:22:34: static error: mismatched types: expected Int, found String
-types.vent:23:18: static error: mismatched types: expected Int, found () (if without else)
+types.vent:23:18: static error: mismatched types: expected Int, found ()
 types.vent:23:28: static error: mismatched types: expected (), found Int
 types.vent:24:47: static error: mismatched types: expected Int, found String
 types.vent:26:6: static error: n expects 1 arguments, got 2

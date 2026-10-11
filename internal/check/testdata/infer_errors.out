@@ -1,0 +1,8 @@
+infer_errors.vent:5:12: static error: mismatched types: expected Int, found String
+infer_errors.vent:10:18: static error: cannot infer the operand type of +; add a type annotation
+infer_errors.vent:12:19: static error: cannot infer the operand type of <; add a type annotation
+infer_errors.vent:17:10: static error: cannot infer the receiver type of method len; add a type annotation
+infer_errors.vent:19:10: static error: cannot infer the type whose field x is accessed; add a type annotation
+infer_errors.vent:23:12: static error: mismatched types: expected _, found Array<_>
+infer_errors.vent:28:15: static error: cannot compare Array<fn()> and Array<fn()>
+infer_errors.vent:38:26: static error: cannot infer the operand type of +; add a type annotation
