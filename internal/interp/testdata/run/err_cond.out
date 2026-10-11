@@ -1,1 +1,1 @@
-error: err_cond.vent:2:8: runtime error: condition must be Bool, got Int
+error: err_cond.vent:2:8: static error: mismatched types: expected Bool, found Int

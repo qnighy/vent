@@ -1,0 +1,12 @@
+struct A { x: Unknown, y: Array<Int, Int>, z: Int<Int> }
+struct A {}
+struct B { x: Int, x: Int }
+
+fn f(x, y: Missing) -> Nope {}
+fn f() {}
+fn println() {}
+
+fn main() {
+    let x: Array = [];
+    let y: fn(Int) -> Unknown = main;
+}

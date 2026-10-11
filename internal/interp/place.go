@@ -24,6 +24,9 @@ type projection struct {
 // evalPlace evaluates a place expression without reading it.
 // Any other expression is evaluated to a temporary.
 func (in *Interp) evalPlace(e syntax.Expr, sc *scope) (*place, error) {
+	if err := in.poison(e); err != nil {
+		return nil, err
+	}
 	switch e := e.(type) {
 	case *syntax.IdentExpr:
 		b := sc.lookup(e.Name)
@@ -213,6 +216,9 @@ func (in *Interp) evalStructLit(e *syntax.StructLit, sc *scope) (Value, error) {
 	decl := in.structs[e.Name]
 	if decl == nil {
 		return nil, errorf(e.Pos, "undefined struct %s", e.Name)
+	}
+	if err := in.poison(decl); err != nil {
+		return nil, err
 	}
 	fields := make([]Value, len(decl.Fields))
 	for _, init := range e.Fields {

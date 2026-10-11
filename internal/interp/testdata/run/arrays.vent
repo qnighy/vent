@@ -27,5 +27,7 @@ fn main() {
 
     // Strings are quoted inside arrays.
     println(["a", "b\n", "\"c\""]);
-    println([(), true, [[]]]);
+    println([(), ()]);
+    let nested: Array<Array<Array<Int>>> = [[[]], [], [[1]]];
+    println(nested);
 }

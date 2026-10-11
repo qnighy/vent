@@ -34,7 +34,7 @@ type Param struct {
 	Type TypeExpr // nil if omitted
 }
 
-// TypeExpr is a type annotation. Annotations are parsed but not yet checked.
+// TypeExpr is a type annotation.
 type TypeExpr interface {
 	typeNode()
 	Position() Pos
@@ -52,11 +52,20 @@ type UnitType struct {
 	Pos Pos
 }
 
+// FuncType is `fn(Params) -> Result`.
+type FuncType struct {
+	Pos    Pos
+	Params []TypeExpr
+	Result TypeExpr // nil if omitted
+}
+
 func (*NamedType) typeNode() {}
 func (*UnitType) typeNode()  {}
+func (*FuncType) typeNode()  {}
 
 func (t *NamedType) Position() Pos { return t.Pos }
 func (t *UnitType) Position() Pos  { return t.Pos }
+func (t *FuncType) Position() Pos  { return t.Pos }
 
 // Stmt is a statement within a block.
 type Stmt interface {

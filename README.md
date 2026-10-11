@@ -46,7 +46,8 @@
 
 ## Development
 
-- `go run ./cmd/vent run <file>.vent` — run a program
+- `go run ./cmd/vent run <file>.vent` — run a program. Static errors abort only when the code containing them is executed
+- `go run ./cmd/vent check <file>...` — report all static errors
 - `go run ./cmd/vent test [-v] <file|dir>...` — run Vent unit tests: parameterless functions named `test_*`, using the builtins `assert`, `assert_eq` and `panic` (a stopgap until test syntax is designed)
 - `go test ./...` — run all tests
-- Golden tests: `internal/interp/testdata/run/*.vent` (programs) and `testdata/test/*.vent` (`vent test` reports) + expected `*.out`. Regenerate with `go test ./internal/interp -run TestGolden -update` and review the diff.
+- Golden tests: `internal/interp/testdata/run/*.vent` (programs), `internal/interp/testdata/test/*.vent` (`vent test` reports) and `internal/check/testdata/*.vent` (`vent check` reports) + expected `*.out`. Regenerate with `go test ./internal/... -run TestGolden -update` and review the diff.

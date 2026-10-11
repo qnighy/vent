@@ -1,0 +1,47 @@
+// A program without static errors.
+struct Point { x: Int, y: Int }
+struct Tree { value: Int, children: Array<Tree> }
+
+fn apply(f: fn(Int) -> Int, x: Int) -> Int { f(x) }
+fn double(x: Int) -> Int { x * 2 }
+
+fn sign(x: Int) -> Int {
+    if x < 0 { return -1; }
+    if x == 0 { 0 } else { 1 }
+}
+
+fn first_over(a: Array<Int>, limit: Int) -> Int {
+    var i = 0;
+    loop {
+        if i >= a.len() { break -1; }
+        if a[i] > limit { break a[i]; }
+        i += 1;
+    }
+}
+
+fn diverge() -> Int {
+    panic("no value")
+}
+
+fn main() {
+    var p = Point { x: 1, y: 2 };
+    p.x += apply(double, 3);
+    var points: Array<Point> = [];
+    points.push(p);
+    points[0].y = 0;
+    let grid = [[1, 2], [3]];
+    let empty: Array<Array<Int>> = [[], [1]];
+    let t = Tree { value: 0, children: [] };
+    println(t == t);
+    println(grid == empty);
+    let s = if p.x > 0 { "pos" } else { "neg" } + "!";
+    println(s);
+    let n = loop { break 1; };
+    println(n + sign(-3) + first_over([1, 5], 2));
+    var words: Array<String> = [];
+    words.push("a");
+    assert_eq(words, ["a"]);
+    let f = println;
+    f(1);
+    while false {}
+}

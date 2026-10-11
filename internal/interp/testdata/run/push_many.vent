@@ -1,6 +1,6 @@
 // Pushing into an unshared array must not copy it each time.
 fn main() {
-    var a = [];
+    var a: Array<Int> = [];
     var i = 0;
     while i < 200000 {
         a.push(i);

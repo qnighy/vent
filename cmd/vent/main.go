@@ -9,13 +9,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/qnighy/vent/internal/check"
 	"github.com/qnighy/vent/internal/interp"
 )
 
 const usage = `usage: vent <command> [arguments]
 
 commands:
-  run <file>                  run a vent program
+  run <file>                  run a vent program; static errors abort only
+                              when the code containing them is executed
+  check <file>...             report the static errors in each file
   test [-v] <file|dir>...     run the tests (functions named test_*) in each
                               file; directories are searched for *.vent files
 `
@@ -36,6 +39,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		return runFile(args[1], stdout, stderr)
+	case "check":
+		if len(args) < 2 {
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		return checkFiles(args[1:], stdout, stderr)
 	case "test":
 		return testPaths(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -103,6 +112,23 @@ func testPaths(args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		if !interp.RunTests(file, src, stdout, verbose) {
+			status = 1
+		}
+	}
+	return status
+}
+
+func checkFiles(paths []string, stdout, stderr io.Writer) int {
+	status := 0
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(stderr, "vent: %v\n", err)
+			status = 1
+			continue
+		}
+		for _, err := range check.CheckFile(path, src) {
+			fmt.Fprintln(stdout, err)
 			status = 1
 		}
 	}

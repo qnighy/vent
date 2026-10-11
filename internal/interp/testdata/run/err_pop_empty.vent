@@ -1,4 +1,4 @@
 fn main() {
-    var a = [];
+    var a: Array<Int> = [];
     a.pop();
 }

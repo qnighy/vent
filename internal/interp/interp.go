@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/qnighy/vent/internal/check"
 	"github.com/qnighy/vent/internal/syntax"
 )
 
@@ -43,8 +44,10 @@ type Interp struct {
 	out     io.Writer
 	globals *scope
 	structs map[string]*syntax.StructDecl
-	prog    *syntax.Program
-	depth   int
+	// poisoned holds the nodes that failed to check. See check.Info.
+	poisoned map[any]*check.Error
+	prog     *syntax.Program
+	depth    int
 }
 
 // Run executes the program in src, writing program output to out.
@@ -58,7 +61,7 @@ func withFilename(filename string, err error) error {
 	switch err.(type) {
 	case nil:
 		return nil
-	case *syntax.Error, *RuntimeError:
+	case *syntax.Error, *check.Error, *RuntimeError:
 		// These already start with a line:col position.
 		return fmt.Errorf("%s:%w", filename, err)
 	default:
@@ -91,32 +94,34 @@ func load(src []byte, out io.Writer) (*Interp, error) {
 	if err != nil {
 		return nil, err
 	}
-	in := &Interp{out: out, globals: newScope(nil), structs: map[string]*syntax.StructDecl{}, prog: prog}
-	in.defineBuiltins()
-	// Functions and structs share a namespace for now.
-	defined := func(name string) bool {
-		return in.globals.lookup(name) != nil || in.structs[name] != nil
+	info := check.Check(prog)
+	if len(info.Fatal) > 0 {
+		return nil, info.Fatal[0]
 	}
+	in := &Interp{
+		out:      out,
+		globals:  newScope(nil),
+		structs:  map[string]*syntax.StructDecl{},
+		poisoned: info.Poisoned,
+		prog:     prog,
+	}
+	in.defineBuiltins()
 	for _, st := range prog.Structs {
-		if defined(st.Name) {
-			return nil, errorf(st.Pos, "duplicate definition of %s", st.Name)
-		}
-		seen := map[string]bool{}
-		for _, f := range st.Fields {
-			if seen[f.Name] {
-				return nil, errorf(f.Pos, "duplicate field %s in %s", f.Name, st.Name)
-			}
-			seen[f.Name] = true
-		}
 		in.structs[st.Name] = st
 	}
 	for _, fn := range prog.Fns {
-		if defined(fn.Name) {
-			return nil, errorf(fn.Pos, "duplicate definition of %s", fn.Name)
-		}
 		in.globals.define(fn.Name, &FuncValue{Decl: fn}, false)
 	}
 	return in, nil
+}
+
+// poison returns the static error of node, if any. Evaluating a node that
+// failed to check aborts with its error.
+func (in *Interp) poison(node any) error {
+	if err, ok := in.poisoned[node]; ok {
+		return err
+	}
+	return nil
 }
 
 type binding struct {
@@ -155,6 +160,9 @@ func (in *Interp) callFunc(pos syntax.Pos, fn *FuncValue, args []Value) (Value, 
 	if in.depth >= maxCallDepth {
 		return nil, errorf(pos, "stack overflow")
 	}
+	if err := in.poison(decl); err != nil {
+		return nil, err
+	}
 	in.depth++
 	defer func() { in.depth-- }()
 
@@ -170,10 +178,16 @@ func (in *Interp) callFunc(pos syntax.Pos, fn *FuncValue, args []Value) (Value, 
 }
 
 func (in *Interp) evalBlock(block *syntax.BlockExpr, parent *scope) (Value, error) {
+	if err := in.poison(block); err != nil {
+		return nil, err
+	}
 	sc := newScope(parent)
 	for _, stmt := range block.Stmts {
 		switch stmt := stmt.(type) {
 		case *syntax.LetStmt:
+			if err := in.poison(stmt); err != nil {
+				return nil, err
+			}
 			v, err := in.eval(stmt.Value, sc)
 			if err != nil {
 				return nil, err
@@ -194,6 +208,9 @@ func (in *Interp) evalBlock(block *syntax.BlockExpr, parent *scope) (Value, erro
 }
 
 func (in *Interp) eval(e syntax.Expr, sc *scope) (Value, error) {
+	if err := in.poison(e); err != nil {
+		return nil, err
+	}
 	switch e := e.(type) {
 	case *syntax.IntLit:
 		return IntValue(e.Value), nil

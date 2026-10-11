@@ -1,1 +1,1 @@
-error: err_immutable_index.vent:3:10: runtime error: cannot assign to immutable variable a
+error: err_immutable_index.vent:3:10: static error: cannot assign to immutable variable a

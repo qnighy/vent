@@ -1,0 +1,49 @@
+struct P { x: Int }
+struct Q { x: Int }
+
+fn f(x: Int) -> String {
+    if x > 0 { return 1; }
+    "ok"
+}
+
+fn g() -> Int {}
+
+fn main() {
+    let a: Int = "a";
+    let b = 1 + true;
+    let c = -"a";
+    let d = !1;
+    let e = P { x: 1 } == Q { x: 1 };
+    let h = "a" < 1;
+    let i = [1, "a"];
+    let j = [];
+    if 1 {}
+    while "a" {}
+    let k = if true { 1 } else { "a" };
+    let l: Int = if true { 1 };
+    let m = loop { if true { break 1; } break "a"; };
+    let n = f;
+    n(1, 2);
+    let o = 1;
+    o();
+    let q = P { x: "a" };
+    let r = P { x: 1, x: 2 };
+    let s = P { y: 1 };
+    let t = P {};
+    let u = q.y;
+    let v = o.x;
+    let w = o[0];
+    let z = [1][true];
+    var arr = [1];
+    arr += 1;
+    arr.push("a");
+    arr.push();
+    arr.len(1);
+    o.len();
+    print();
+    println(1, 2);
+    panic();
+    assert(1);
+    assert_eq(1, "a");
+    assert_eq(main, main);
+}
