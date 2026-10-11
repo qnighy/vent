@@ -1,0 +1,11 @@
+--- FAIL: test_poisoned_impl
+    partial_m4.vent:15:1: static error: missing method show in the implementation of Show for Bool
+--- FAIL: test_non_exhaustive
+    before match
+    partial_m4.vent:19:5: static error: non-exhaustive patterns: Color::Blue not covered
+--- FAIL: test_poisoned_arm_body
+    partial_m4.vent:28:25: static error: mismatched types: expected Int, found String
+--- FAIL: test_generic_param
+    partial_m4.vent:51:1: runtime error: test function must not have type parameters
+FAIL partial_m4.vent (4 failed, 1 passed)
+(failed)

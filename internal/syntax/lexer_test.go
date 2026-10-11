@@ -36,6 +36,21 @@ func TestTokenize(t *testing.T) {
 	}
 }
 
+func TestTokenizePunctuation(t *testing.T) {
+	toks, err := Tokenize([]byte(":: : => = == .. . | || match"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []TokenKind
+	for _, tok := range toks {
+		got = append(got, tok.Kind)
+	}
+	want := []TokenKind{ColonColon, Colon, FatArrow, Assign, Eq, DotDot, Dot, Pipe, OrOr, KwMatch, EOF}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Tokenize mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestTokenizeErrors(t *testing.T) {
 	for _, src := range []string{
 		`"abc`,

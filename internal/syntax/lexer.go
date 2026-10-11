@@ -185,11 +185,11 @@ func (l *lexer) next() (Token, error) {
 	case ',':
 		return one(Comma), nil
 	case '.':
-		return one(Dot), nil
+		return two('.', DotDot, Dot), nil
 	case ';':
 		return one(Semicolon), nil
 	case ':':
-		return one(Colon), nil
+		return two(':', ColonColon, Colon), nil
 	case '+':
 		return two('=', PlusAssign, Plus), nil
 	case '-':
@@ -207,6 +207,10 @@ func (l *lexer) next() (Token, error) {
 	case '!':
 		return two('=', Ne, Bang), nil
 	case '=':
+		if l.peekByte(1) == '>' {
+			l.advance()
+			return one(FatArrow), nil
+		}
 		return two('=', Eq, Assign), nil
 	case '<':
 		return two('=', Le, Lt), nil
@@ -218,10 +222,7 @@ func (l *lexer) next() (Token, error) {
 			return one(AndAnd), nil
 		}
 	case '|':
-		if l.peekByte(1) == '|' {
-			l.advance()
-			return one(OrOr), nil
-		}
+		return two('|', OrOr, Pipe), nil
 	}
 	return Token{}, l.errorf(start, "unexpected character %q", r)
 }

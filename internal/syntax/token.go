@@ -44,6 +44,11 @@ const (
 	KwTrue
 	KwFalse
 	KwStruct
+	KwEnum
+	KwMatch
+	KwTrait
+	KwImpl
+	KwFor
 
 	// Punctuation
 	LParen
@@ -56,7 +61,10 @@ const (
 	Semicolon
 	Colon
 	Dot
+	DotDot
 	Arrow
+	FatArrow
+	ColonColon
 
 	// Operators
 	Plus
@@ -67,6 +75,7 @@ const (
 	Bang
 	AndAnd
 	OrOr
+	Pipe
 	Eq
 	Ne
 	Lt
@@ -100,18 +109,26 @@ var tokenNames = [...]string{
 	KwTrue:     "true",
 	KwFalse:    "false",
 	KwStruct:   "struct",
+	KwEnum:     "enum",
+	KwMatch:    "match",
+	KwTrait:    "trait",
+	KwImpl:     "impl",
+	KwFor:      "for",
 
-	LParen:    "(",
-	RParen:    ")",
-	LBrace:    "{",
-	RBrace:    "}",
-	LBracket:  "[",
-	RBracket:  "]",
-	Comma:     ",",
-	Semicolon: ";",
-	Colon:     ":",
-	Dot:       ".",
-	Arrow:     "->",
+	LParen:     "(",
+	RParen:     ")",
+	LBrace:     "{",
+	RBrace:     "}",
+	LBracket:   "[",
+	RBracket:   "]",
+	Comma:      ",",
+	Semicolon:  ";",
+	Colon:      ":",
+	Dot:        ".",
+	DotDot:     "..",
+	Arrow:      "->",
+	FatArrow:   "=>",
+	ColonColon: "::",
 
 	Plus:          "+",
 	Minus:         "-",
@@ -121,6 +138,7 @@ var tokenNames = [...]string{
 	Bang:          "!",
 	AndAnd:        "&&",
 	OrOr:          "||",
+	Pipe:          "|",
 	Eq:            "==",
 	Ne:            "!=",
 	Lt:            "<",
@@ -156,6 +174,11 @@ var keywords = map[string]TokenKind{
 	"true":     KwTrue,
 	"false":    KwFalse,
 	"struct":   KwStruct,
+	"enum":     KwEnum,
+	"match":    KwMatch,
+	"trait":    KwTrait,
+	"impl":     KwImpl,
+	"for":      KwFor,
 }
 
 // Token is a lexical token.

@@ -1,16 +1,60 @@
 package syntax
 
-// Program is a whole source file.
+// Program is a whole source file. Each list is in source order.
 type Program struct {
 	Fns     []*FnDecl
 	Structs []*StructDecl
+	Enums   []*EnumDecl
+	Traits  []*TraitDecl
+	Impls   []*ImplDecl
 }
 
-// StructDecl is a top-level struct declaration: struct Name { field: Type, ... }
-type StructDecl struct {
+// TypeParam is a type parameter with optional trait bounds: `T: A + B`.
+type TypeParam struct {
 	Pos    Pos
 	Name   string
-	Fields []*FieldDecl
+	Bounds []*NamedType
+}
+
+// StructDecl is a top-level struct declaration: struct Name<T> { field: Type, ... }
+type StructDecl struct {
+	Pos        Pos
+	Name       string
+	TypeParams []*TypeParam
+	Fields     []*FieldDecl
+}
+
+// EnumDecl is a top-level enum declaration: enum Name<T> { A, B(Type, ...), ... }
+type EnumDecl struct {
+	Pos        Pos
+	Name       string
+	TypeParams []*TypeParam
+	Variants   []*VariantDecl
+}
+
+// VariantDecl is a variant of an enum. Fields are positional.
+type VariantDecl struct {
+	Pos    Pos
+	Name   string
+	Fields []TypeExpr
+}
+
+// TraitDecl is `trait Name { fn method(self, ...) -> T; ... }`.
+// A method with a body is a default implementation.
+type TraitDecl struct {
+	Pos     Pos
+	Name    string
+	Methods []*FnDecl
+}
+
+// ImplDecl is `impl<T> Trait for Type { ... }`, or `impl<T> Type { ... }`
+// for inherent methods (Trait is nil).
+type ImplDecl struct {
+	Pos        Pos
+	TypeParams []*TypeParam
+	Trait      *NamedType // nil for inherent impls
+	Self       TypeExpr
+	Methods    []*FnDecl
 }
 
 type FieldDecl struct {
@@ -19,13 +63,16 @@ type FieldDecl struct {
 	Type TypeExpr
 }
 
-// FnDecl is a top-level function declaration: fn name(params) -> Result { Body }
+// FnDecl is a function declaration: fn name<T>(params) -> Result { Body }
+// In a trait or impl, a first parameter named self without a type is the
+// receiver, of type Self.
 type FnDecl struct {
-	Pos    Pos
-	Name   string
-	Params []*Param
-	Result TypeExpr // nil if omitted
-	Body   *BlockExpr
+	Pos        Pos
+	Name       string
+	TypeParams []*TypeParam
+	Params     []*Param
+	Result     TypeExpr   // nil if omitted
+	Body       *BlockExpr // nil for a trait method without a default
 }
 
 type Param struct {
@@ -219,6 +266,28 @@ type LoopExpr struct {
 	Body *BlockExpr
 }
 
+// PathExpr is `Qual::Name`, naming an enum variant, an associated function
+// of a type, or a method of a trait.
+type PathExpr struct {
+	Pos  Pos
+	Qual string
+	Name string
+}
+
+// MatchExpr is `match x { pattern if guard => value, ... }`.
+type MatchExpr struct {
+	Pos  Pos
+	X    Expr
+	Arms []*MatchArm
+}
+
+type MatchArm struct {
+	Pos     Pos
+	Pattern Pattern
+	Guard   Expr // nil if omitted
+	Body    Expr
+}
+
 type BreakExpr struct {
 	Pos   Pos
 	Value Expr // nil if omitted
@@ -233,6 +302,8 @@ type ReturnExpr struct {
 	Value Expr // nil if omitted
 }
 
+func (*PathExpr) exprNode()       {}
+func (*MatchExpr) exprNode()      {}
 func (*IntLit) exprNode()         {}
 func (*StringLit) exprNode()      {}
 func (*BoolLit) exprNode()        {}
@@ -255,6 +326,8 @@ func (*BreakExpr) exprNode()      {}
 func (*ContinueExpr) exprNode()   {}
 func (*ReturnExpr) exprNode()     {}
 
+func (e *PathExpr) Position() Pos       { return e.Pos }
+func (e *MatchExpr) Position() Pos      { return e.Pos }
 func (e *IntLit) Position() Pos         { return e.Pos }
 func (e *StringLit) Position() Pos      { return e.Pos }
 func (e *BoolLit) Position() Pos        { return e.Pos }
@@ -276,3 +349,70 @@ func (e *LoopExpr) Position() Pos       { return e.Pos }
 func (e *BreakExpr) Position() Pos      { return e.Pos }
 func (e *ContinueExpr) Position() Pos   { return e.Pos }
 func (e *ReturnExpr) Position() Pos     { return e.Pos }
+
+// Pattern is a pattern in a match arm.
+type Pattern interface {
+	patternNode()
+	Position() Pos
+}
+
+// WildcardPat is `_`.
+type WildcardPat struct {
+	Pos Pos
+}
+
+// BindPat binds the matched value to a new immutable variable.
+type BindPat struct {
+	Pos  Pos
+	Name string
+}
+
+// LitPat matches a literal. Value is an *IntLit, *StringLit, *BoolLit or *UnitLit.
+type LitPat struct {
+	Pos   Pos
+	Value Expr
+}
+
+// VariantPat is `Enum::Variant` or `Enum::Variant(patterns, ...)`.
+type VariantPat struct {
+	Pos     Pos
+	Enum    string
+	Variant string
+	Elems   []Pattern
+}
+
+// StructPat is `Name { field: pattern, field, .. }`. The shorthand `field`
+// sets Pattern to a *BindPat. Rest is set if `..` ends the field list.
+type StructPat struct {
+	Pos    Pos
+	Name   string
+	Fields []*FieldPat
+	Rest   bool
+}
+
+// OrPat matches if any of Alts does. Every alternative binds the same
+// variables.
+type OrPat struct {
+	Pos  Pos
+	Alts []Pattern
+}
+
+type FieldPat struct {
+	Pos     Pos
+	Name    string
+	Pattern Pattern
+}
+
+func (*WildcardPat) patternNode() {}
+func (*BindPat) patternNode()     {}
+func (*LitPat) patternNode()      {}
+func (*VariantPat) patternNode()  {}
+func (*StructPat) patternNode()   {}
+func (*OrPat) patternNode()       {}
+
+func (p *WildcardPat) Position() Pos { return p.Pos }
+func (p *BindPat) Position() Pos     { return p.Pos }
+func (p *LitPat) Position() Pos      { return p.Pos }
+func (p *VariantPat) Position() Pos  { return p.Pos }
+func (p *StructPat) Position() Pos   { return p.Pos }
+func (p *OrPat) Position() Pos       { return p.Pos }

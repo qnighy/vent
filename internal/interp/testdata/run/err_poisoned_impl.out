@@ -1,0 +1,2 @@
+int
+error: err_poisoned_impl.vent:5:22: static error: method show has type fn(Bool) -> Int, but trait Show requires fn(Bool) -> String

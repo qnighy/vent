@@ -1,0 +1,44 @@
+enum Option<T> { None, Some(T) }
+enum Color { Red, Green, Blue }
+enum Void {}
+struct P { x: Int, y: Bool }
+
+fn exhaustiveness(o: Option<Option<Int>>, c: Color, p: P, n: Int, v: Void) {
+    match c { Color::Red => 1, Color::Green => 2 };
+    match o { Option::Some(Option::None) => 1, Option::None => 2 };
+    match o { Option::Some(_) => 1 };
+    match p { P { y: true, .. } => 1 };
+    match n { 0 => 1, 1 => 2 };
+    match "s" { "a" => 1 };
+    match [1] { _ => 1 };
+    // A guarded arm does not count.
+    match c { Color::Red => 1, Color::Green => 2, Color::Blue if n > 0 => 3 };
+    // Exhaustive.
+    match c { Color::Red | Color::Green => 1, Color::Blue => 2 };
+    match o { Option::Some(Option::Some(_)) => 1, Option::Some(Option::None) | Option::None => 2 };
+    match p { P { x: 0, y } => 1, P { x: _, y: true } => 2, P { y: false, .. } => 3 };
+    match n { 0 => 1, _ => 2 };
+    match v {};
+    match () { () => 1 };
+}
+
+fn patterns(o: Option<Int>, p: P) {
+    match o { Option::Some("a") => 1, _ => 2 };
+    match o { Color::Red => 1, _ => 2 };
+    match o { Option::Some(x, y) => 1, _ => 2 };
+    match o { Option::Other => 1, _ => 2 };
+    match o { Nope::A => 1, _ => 2 };
+    match p { P { x } => x, _ => 2 };
+    match p { P { z: 1, .. } => 1, _ => 2 };
+    match p { P { x: a, y: a } => 1 };
+    match o { Option::Some(a) | Option::None => 1, _ => 2 };
+    match p { P { x: 1, y: a } | P { x: a, y: true } => 1, _ => 2 };
+    match o { Option::Some(n) if n => 1, _ => 2 };
+    // Errors in a pattern do not cascade into its bindings.
+    match o { Option::Some(q, r) => q + r, _ => 0 };
+}
+
+fn arm_types(o: Option<Int>) {
+    let a = match o { Option::Some(x) => x, Option::None => "none" };
+    let b: String = match o { Option::Some(_) => return, Option::None => 1 };
+}

@@ -1,0 +1,12 @@
+// The impl a generic function uses is chosen by its type arguments at run
+// time. Here the impl for Bool failed to check, so reaching it aborts.
+trait Show { fn show(self) -> String; }
+impl Show for Int { fn show(self) -> String { "int" } }
+impl Show for Bool { fn show(self) -> Int { 0 } }
+
+fn show<T: Show>(x: T) -> String { x.show() }
+
+fn main() {
+    println(show(1));
+    println(show(true));
+}

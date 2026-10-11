@@ -1,0 +1,29 @@
+traits.vent:16:1: static error: conflicting implementations of Show for Int and Int
+traits.vent:17:1: static error: missing method show in the implementation of Show for Box<T>
+traits.vent:18:24: static error: method show has type fn(String) -> Int, but trait Show requires fn(String) -> String
+traits.vent:18:51: static error: method extra is not a member of trait Show
+traits.vent:19:22: static error: method show does not match its declaration in trait Show
+traits.vent:20:6: static error: undefined trait Nope
+traits.vent:21:6: static error: Eq is implemented by the language and cannot be implemented
+traits.vent:22:6: static error: type parameter T is not used in the type Int
+traits.vent:23:6: static error: inherent methods can only be defined on structs and enums, not Int
+traits.vent:24:51: static error: duplicate definition of method get
+traits.vent:25:15: static error: Show is a trait, not a type
+traits.vent:30:7: static error: no method show on T
+traits.vent:31:7: static error: cannot access field value of T
+traits.vent:32:7: static error: cannot compare T and T
+traits.vent:39:5: static error: fn() does not implement Show
+traits.vent:41:5: static error: fn() does not implement Eq
+traits.vent:45:7: static error: method show on Int is ambiguous: it is defined by traits Show, Named
+traits.vent:46:7: static error: name is an associated function, not a method
+traits.vent:48:7: static error: no method missing on Int
+traits.vent:49:5: static error: no method missing on Int
+traits.vent:50:21: static error: default is an associated function, not a method
+traits.vent:54:13: static error: cannot infer which implementation of Default to use for _; add a type annotation
+traits.vent:57:26: static error: cannot infer which implementation of Show to use for Option<_>; add a type annotation
+traits.vent:58:13: static error: cannot infer which implementation of Show to use for Option<_>; add a type annotation
+traits.vent:60:13: static error: cannot infer which implementation of Show to use for _; add a type annotation
+traits.vent:62:12: static error: cannot infer which implementation of Default to use for _; add a type annotation
+traits.vent:64:22: static error: cannot infer which implementation of Default to use for _; add a type annotation
+traits.vent:65:5: static error: cannot infer which implementation of Show to use for Option<_>; add a type annotation
+traits.vent:68:26: static error: cannot infer which implementation of Default to use for _; add a type annotation

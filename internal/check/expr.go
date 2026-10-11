@@ -2,33 +2,40 @@ package check
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/qnighy/vent/internal/syntax"
 )
 
-func (c *checker) checkFunc(fn *syntax.FnDecl) {
-	sig := c.funcs[fn.Name]
-	c.result = sig.Result
+func (c *checker) checkFunc(f *Func) {
+	c.result = f.Result
+	c.tscope, c.self = f.scope, f.self
 	c.scope = &scope{vars: map[string]*variable{}}
 	c.loops = nil
 	c.deferred = nil
-	for i, param := range fn.Params {
-		c.scope.vars[param.Name] = &variable{typ: sig.Params[i]}
+	c.pending = nil
+	for i, param := range f.Decl.Params {
+		c.scope.vars[param.Name] = &variable{typ: f.Params[i]}
 	}
-	c.check(fn.Body, sig.Result)
+	c.check(f.Decl.Body, f.Result)
 	for _, d := range c.deferred {
 		d()
 	}
 	c.scope = nil
 }
 
-// lookup resolves a name used as a value.
-func (c *checker) lookup(name string) (Type, *variable) {
+// lookup resolves a name used as a value. node is the name, to which
+// references to generic functions are attached.
+func (c *checker) lookup(node *syntax.IdentExpr) (Type, *variable) {
+	name := node.Name
 	if v := c.scope.lookup(name); v != nil {
 		return v.typ, v
 	}
 	if f := c.funcs[name]; f != nil {
-		return f, nil
+		args, env := instantiate(f.TypeParams)
+		c.requireBounds(node, node.Pos, f.TypeParams, args)
+		c.info.Refs[node] = &Ref{Kind: RefFunc, Func: f, TypeArgs: args}
+		return subst(f.typ(), env), nil
 	}
 	for _, b := range Builtins {
 		if b == name {
@@ -38,13 +45,9 @@ func (c *checker) lookup(name string) (Type, *variable) {
 	return nil, nil
 }
 
-func fresh() Type {
-	return &TypeVar{}
-}
-
-// check infers the type of e and unifies it with want.
+// check infers the type of e, expecting want, and unifies it with want.
 func (c *checker) check(e syntax.Expr, want Type) Type {
-	return c.expect(e, c.infer(e), want)
+	return c.expect(e, c.inferWant(e, want), want)
 }
 
 // expect unifies t, the type of e, with want. On failure it poisons the node
@@ -72,14 +75,36 @@ func (c *checker) mismatch(e syntax.Expr, want, got Type) Type {
 
 // infer returns the type of e, built bottom-up from its subexpressions.
 func (c *checker) infer(e syntax.Expr) Type {
-	t := c.infer1(e)
+	return c.inferWant(e, nil)
+}
+
+// inferWant is infer with a hint: the type expected of e, or nil. The hint
+// is unified with the type of e before the trait obligations of e are
+// proven, and is passed down to calls in tail position, so that the
+// expected type can determine which impl a call uses. A mismatch with the
+// hint is not an error here.
+func (c *checker) inferWant(e syntax.Expr, want Type) Type {
+	mark := len(c.pending)
+	t := c.inferPending(e, want)
+	c.prove(mark)
+	return t
+}
+
+// inferPending is inferWant, except that the obligations of e are left
+// pending. A call uses it on its callee, whose obligations are proven with
+// the call's.
+func (c *checker) inferPending(e syntax.Expr, want Type) Type {
+	t := c.infer1(e, want)
+	if want != nil {
+		unify(t, want)
+	}
 	if !isInvalid(t) {
 		c.info.Types[e] = t
 	}
 	return t
 }
 
-func (c *checker) infer1(e syntax.Expr) Type {
+func (c *checker) infer1(e syntax.Expr, want Type) Type {
 	switch e := e.(type) {
 	case *syntax.IntLit:
 		return Int
@@ -90,7 +115,7 @@ func (c *checker) infer1(e syntax.Expr) Type {
 	case *syntax.UnitLit:
 		return Unit
 	case *syntax.IdentExpr:
-		t, _ := c.lookup(e.Name)
+		t, _ := c.lookup(e)
 		if t == nil {
 			return c.poison(e, e.Pos, "undefined variable %s", e.Name)
 		}
@@ -112,7 +137,11 @@ func (c *checker) infer1(e syntax.Expr) Type {
 	case *syntax.AssignExpr:
 		return c.checkAssign(e)
 	case *syntax.CallExpr:
-		return c.checkCall(e)
+		return c.checkCall(e, want)
+	case *syntax.PathExpr:
+		return c.checkPath(e)
+	case *syntax.MatchExpr:
+		return c.checkMatch(e, want)
 	case *syntax.ArrayLit:
 		elem := fresh()
 		for _, x := range e.Elems {
@@ -150,11 +179,11 @@ func (c *checker) infer1(e syntax.Expr) Type {
 			return c.poison(e, e.Pos, "cannot access field %s of %v", e.Name, x)
 		}
 	case *syntax.MethodCallExpr:
-		return c.checkMethodCall(e)
+		return c.checkMethodCall(e, want)
 	case *syntax.BlockExpr:
-		return c.checkBlock(e)
+		return c.checkBlock(e, want)
 	case *syntax.IfExpr:
-		return c.checkIf(e)
+		return c.checkIf(e, want)
 	case *syntax.WhileExpr:
 		c.check(e.Cond, Bool)
 		c.loops = append(c.loops, &loopCtx{})
@@ -189,7 +218,7 @@ func (c *checker) infer1(e syntax.Expr) Type {
 	}
 }
 
-func (c *checker) checkBlock(b *syntax.BlockExpr) Type {
+func (c *checker) checkBlock(b *syntax.BlockExpr, want Type) Type {
 	c.scope = &scope{parent: c.scope, vars: map[string]*variable{}}
 	defer func() { c.scope = c.scope.parent }()
 
@@ -215,7 +244,7 @@ func (c *checker) checkBlock(b *syntax.BlockExpr) Type {
 		}
 	}
 	if b.Tail != nil {
-		return c.infer(b.Tail)
+		return c.inferWant(b.Tail, want)
 	}
 	if diverges {
 		return Never
@@ -223,14 +252,14 @@ func (c *checker) checkBlock(b *syntax.BlockExpr) Type {
 	return Unit
 }
 
-func (c *checker) checkIf(e *syntax.IfExpr) Type {
+func (c *checker) checkIf(e *syntax.IfExpr, want Type) Type {
 	c.check(e.Cond, Bool)
 	if e.Else == nil {
 		c.check(e.Then, Unit)
 		return Unit
 	}
-	t := c.infer(e.Then)
-	u := c.infer(e.Else)
+	t := c.inferWant(e.Then, want)
+	u := c.inferWant(e.Else, want)
 	if prune(t) == Never {
 		return u
 	}
@@ -366,12 +395,12 @@ func (c *checker) checkPlace(node syntax.Expr, place syntax.Expr, verb string) T
 	if !ok {
 		return t // A temporary may be written, to no lasting effect.
 	}
-	rt, v := c.lookup(ident.Name)
+	v := c.scope.lookup(ident.Name)
 	switch {
-	case rt == nil:
-		// Already reported as undefined.
-	case v == nil:
+	case v == nil && (c.funcs[ident.Name] != nil || slices.Contains(Builtins, ident.Name)):
 		c.poison(node, node.Position(), "cannot %s function %s", verb, ident.Name)
+	case v == nil:
+		// Already reported as undefined, or a builtin.
 	case !v.mutable:
 		c.poison(node, node.Position(), "cannot %s immutable variable %s", verb, ident.Name)
 	}
@@ -389,8 +418,8 @@ func (c *checker) checkArgs(args []syntax.Expr, params []Type) {
 	}
 }
 
-func (c *checker) checkCall(e *syntax.CallExpr) Type {
-	callee := prune(c.infer(e.Fn))
+func (c *checker) checkCall(e *syntax.CallExpr, want Type) Type {
+	callee := prune(c.inferPending(e.Fn, nil))
 	if v, ok := callee.(*TypeVar); ok {
 		// Calling does not depend on the function, so its type can be inferred.
 		ft := &FuncType{Result: fresh()}
@@ -402,11 +431,17 @@ func (c *checker) checkCall(e *syntax.CallExpr) Type {
 	}
 	switch ft := callee.(type) {
 	case *FuncType:
+		if want != nil {
+			unify(ft.Result, want)
+		}
 		c.checkArgs(e.Args, ft.Params)
 		if len(e.Args) != len(ft.Params) {
 			name := "function"
-			if id, ok := e.Fn.(*syntax.IdentExpr); ok {
-				name = id.Name
+			switch fn := e.Fn.(type) {
+			case *syntax.IdentExpr:
+				name = fn.Name
+			case *syntax.PathExpr:
+				name = fn.Qual + "::" + fn.Name
 			}
 			return c.poison(e, e.Pos, "%s expects %d arguments, got %d", name, len(ft.Params), len(e.Args))
 		}
@@ -420,6 +455,37 @@ func (c *checker) checkCall(e *syntax.CallExpr) Type {
 		c.checkArgs(e.Args, nil)
 		return c.poison(e, e.Pos, "cannot call a value of type %v", callee)
 	}
+}
+
+// checkPath checks Qual::Name.
+func (c *checker) checkPath(e *syntax.PathExpr) Type {
+	t, trait := c.lookupQual(e)
+	if trait != nil {
+		if trait.method(e.Name) == nil {
+			return c.poison(e, e.Pos, "no method %s in trait %s", e.Name, trait.Name)
+		}
+		ref, ft := c.traitMethod(e, e.Pos, trait, e.Name, fresh())
+		c.info.Refs[e] = ref
+		return ft
+	}
+	if isInvalid(t) {
+		return Invalid
+	}
+	if et, ok := prune(t).(*EnumType); ok {
+		if i, fields, ok := et.variant(e.Name); ok {
+			c.info.Refs[e] = &Ref{Kind: RefVariant, Enum: et.Def, Variant: i, TypeArgs: et.Args}
+			if len(fields) == 0 {
+				return et
+			}
+			return &FuncType{Params: fields, Result: et}
+		}
+	}
+	ref, ft := c.lookupAssoc(e, e.Pos, t, e.Name)
+	if ref == nil {
+		return Invalid
+	}
+	c.info.Refs[e] = ref
+	return ft
 }
 
 func (c *checker) checkBuiltinCall(e *syntax.CallExpr, name string) Type {
@@ -476,21 +542,9 @@ func (c *checker) checkBuiltinCall(e *syntax.CallExpr, name string) Type {
 	}
 }
 
-func (c *checker) checkMethodCall(e *syntax.MethodCallExpr) Type {
+func (c *checker) checkMethodCall(e *syntax.MethodCallExpr, want Type) Type {
 	recv := prune(c.infer(e.Recv))
-	var params []Type
-	var result Type
-	mutates := false
 	switch rt := recv.(type) {
-	case *ArrayType:
-		switch e.Name {
-		case "len":
-			result = Int
-		case "push":
-			params, result, mutates = []Type{rt.Elem}, Unit, true
-		case "pop":
-			result, mutates = rt.Elem, true
-		}
 	case *InvalidType, *NeverType:
 		c.checkArgs(e.Args, nil)
 		return rt
@@ -498,23 +552,76 @@ func (c *checker) checkMethodCall(e *syntax.MethodCallExpr) Type {
 		// Which method is called depends on the receiver type.
 		c.checkArgs(e.Args, nil)
 		return c.poison(e, e.Pos, "cannot infer the receiver type of method %s; add a type annotation", e.Name)
+	case *ArrayType:
+		if t, ok := c.checkArrayMethod(e, rt); ok {
+			return t
+		}
 	}
-	if result == nil {
+	ref, ft := c.lookupAssoc(e, e.Pos, recv, e.Name)
+	if ref == nil {
 		c.checkArgs(e.Args, nil)
-		return c.poison(e, e.Pos, "no method %s on %v", e.Name, recv)
+		return Invalid
 	}
+	if !ref.Func.HasSelf {
+		c.checkArgs(e.Args, nil)
+		return c.poison(e, e.Pos, "%s is an associated function, not a method", e.Name)
+	}
+	c.info.Refs[e] = ref
+	if want != nil {
+		unify(ft.Result, want)
+	}
+	params := ft.Params[1:]
+	c.checkArgs(e.Args, params)
+	if len(e.Args) != len(params) {
+		return c.poison(e, e.Pos, "%s expects %d arguments, got %d", e.Name, len(params), len(e.Args))
+	}
+	return ft.Result
+}
+
+// checkArrayMethod checks a call to a builtin method of Array. It reports
+// false if there is no such method.
+func (c *checker) checkArrayMethod(e *syntax.MethodCallExpr, rt *ArrayType) (Type, bool) {
+	var params []Type
+	var result Type
+	mutates := false
+	switch e.Name {
+	case "len":
+		result = Int
+	case "push":
+		params, result, mutates = []Type{rt.Elem}, Unit, true
+	case "pop":
+		result, mutates = rt.Elem, true
+	default:
+		return nil, false
+	}
+	c.info.Refs[e] = &Ref{Kind: RefArrayMethod}
 	if mutates {
 		c.checkPlace(e, e.Recv, "mutate")
 	}
 	c.checkArgs(e.Args, params)
 	if len(e.Args) != len(params) {
-		return c.poison(e, e.Pos, "%s expects %d arguments, got %d", e.Name, len(params), len(e.Args))
+		return c.poison(e, e.Pos, "%s expects %d arguments, got %d", e.Name, len(params), len(e.Args)), true
 	}
-	return result
+	return result, true
+}
+
+// lookupStruct resolves the name of a struct in a literal or pattern.
+// Generic structs get fresh type arguments.
+func (c *checker) lookupStruct(name string) *StructType {
+	if name == "Self" {
+		st, _ := prune(c.self).(*StructType)
+		return st
+	}
+	def := c.structs[name]
+	if def == nil {
+		return nil
+	}
+	args, _ := instantiate(def.Params)
+	return &StructType{Def: def, Args: args}
 }
 
 func (c *checker) checkStructLit(e *syntax.StructLit) Type {
-	st := c.structs[e.Name]
+	st := c.lookupStruct(e.Name)
 	if st == nil {
 		for _, init := range e.Fields {
 			c.infer(init.Value)
@@ -537,7 +644,7 @@ func (c *checker) checkStructLit(e *syntax.StructLit) Type {
 			c.check(init.Value, ft)
 		}
 	}
-	for _, f := range st.Decl.Fields {
+	for _, f := range st.Def.Decl.Fields {
 		if !seen[f.Name] {
 			err = c.poison(e, e.Pos, "missing field %s in %s", f.Name, e.Name)
 		}
@@ -545,5 +652,6 @@ func (c *checker) checkStructLit(e *syntax.StructLit) Type {
 	if err != nil {
 		return Invalid
 	}
+	c.info.Structs[e] = st.Def
 	return st
 }

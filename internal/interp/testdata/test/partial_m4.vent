@@ -1,0 +1,51 @@
+// Static errors in impls and matches abort only when reached.
+
+enum Color { Red, Green, Blue }
+
+trait Show {
+    fn show(self) -> String;
+    fn describe(self) -> String { "<" + self.show() + ">" }
+}
+
+impl Show for Int {
+    fn show(self) -> String { "int" }
+}
+
+// Missing a method: calls served by this impl abort.
+impl Show for Bool {}
+
+fn name(c: Color) -> String {
+    println("before match");
+    match c {
+        Color::Red => "red",
+        Color::Green => "green",
+    }
+}
+
+fn pick(c: Color) -> Int {
+    match c {
+        Color::Red => 1,
+        Color::Green => "two",
+        Color::Blue => 3,
+    }
+}
+
+fn test_good_impl() {
+    assert_eq(1.describe(), "<int>");
+}
+
+fn test_poisoned_impl() {
+    println(true.describe());
+}
+
+fn test_non_exhaustive() {
+    println(name(Color::Red));
+}
+
+fn test_poisoned_arm_body() {
+    assert_eq(pick(Color::Red), 1);
+    assert_eq(pick(Color::Blue), 3);
+    pick(Color::Green);
+}
+
+fn test_generic_param<T>() {}

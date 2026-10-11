@@ -1,0 +1,21 @@
+match.vent:7:5: static error: non-exhaustive patterns: Color::Blue not covered
+match.vent:8:5: static error: non-exhaustive patterns: Option::Some(Option::Some(_)) not covered
+match.vent:9:5: static error: non-exhaustive patterns: Option::None not covered
+match.vent:10:5: static error: non-exhaustive patterns: P { x: _, y: false } not covered
+match.vent:11:5: static error: non-exhaustive patterns: _ not covered
+match.vent:12:5: static error: non-exhaustive patterns: _ not covered
+match.vent:15:5: static error: non-exhaustive patterns: Color::Blue not covered
+match.vent:26:28: static error: mismatched types: expected Int, found String
+match.vent:27:15: static error: mismatched types: expected Option<Int>, found Color
+match.vent:28:15: static error: Option::Some has 1 field, but the pattern has 2
+match.vent:29:15: static error: no variant Other in Option
+match.vent:30:15: static error: undefined enum Nope
+match.vent:31:15: static error: pattern does not mention field y; add it or `..`
+match.vent:32:19: static error: no field z on P
+match.vent:33:28: static error: variable a is bound more than once in the same pattern
+match.vent:34:33: static error: variable a is not bound in every alternative
+match.vent:35:34: static error: mismatched types: variable a is Int here, but Bool in the first alternative
+match.vent:36:34: static error: mismatched types: expected Bool, found Int
+match.vent:38:15: static error: Option::Some has 1 field, but the pattern has 2
+match.vent:42:61: static error: mismatched types: expected Int, found String
+match.vent:43:21: static error: mismatched types: expected String, found Int

@@ -1,0 +1,175 @@
+// Generics and traits. Which impl a trait method call runs is chosen by
+// types, including the type arguments of the running generic function.
+
+enum Option<T> {
+    None,
+    Some(T),
+}
+
+struct Pair<A, B> { first: A, second: B }
+
+trait Show {
+    fn show(self) -> String;
+
+    // A default method, which may call the other methods.
+    fn show_twice(self) -> String {
+        self.show() + self.show()
+    }
+}
+
+trait Default {
+    fn default() -> Self;
+}
+
+impl Show for Int {
+    fn show(self) -> String {
+        if self < 0 { "minus" } else { "plus" }
+    }
+}
+
+impl Show for String {
+    fn show(self) -> String { "\"" + self + "\"" }
+    fn show_twice(self) -> String { "twice " + self }
+}
+
+impl<T: Show> Show for Option<T> {
+    fn show(self) -> String {
+        match self {
+            Option::Some(x) => "Some(" + x.show() + ")",
+            Option::None => "None",
+        }
+    }
+}
+
+impl<T: Show> Show for Array<T> {
+    fn show(self) -> String {
+        var s = "[";
+        var i = 0;
+        while i < self.len() {
+            if i > 0 { s = s + ", "; }
+            s = s + self[i].show();
+            i += 1;
+        }
+        s + "]"
+    }
+}
+
+impl Default for Int {
+    fn default() -> Self { 0 }
+}
+
+impl Default for String {
+    fn default() -> String { "" }
+}
+
+impl<T> Default for Option<T> {
+    fn default() -> Self { Option::None }
+}
+
+impl<A: Default, B: Default> Default for Pair<A, B> {
+    fn default() -> Self {
+        Pair { first: A::default(), second: B::default() }
+    }
+}
+
+// Inherent methods and associated functions.
+impl<A, B> Pair<A, B> {
+    fn new(first: A, second: B) -> Self {
+        Pair { first, second }
+    }
+
+    fn swap(self) -> Pair<B, A> {
+        Pair::new(self.second, self.first)
+    }
+}
+
+impl<T> Option<T> {
+    fn unwrap_or(self, fallback: T) -> T {
+        match self {
+            Option::Some(x) => x,
+            Option::None => fallback,
+        }
+    }
+
+    fn is_some(self) -> Bool {
+        match self {
+            Self::Some(_) => true,
+            Self::None => false,
+        }
+    }
+}
+
+fn id<T>(x: T) -> T { x }
+
+// The impl of Show used depends on T.
+fn show_all<T: Show>(items: Array<T>) -> String {
+    var s = "";
+    var i = 0;
+    while i < items.len() {
+        s = s + items[i].show() + ";";
+        i += 1;
+    }
+    s
+}
+
+// A static trait method chosen by the type argument alone.
+fn defaults<T: Default>(n: Int) -> Array<T> {
+    var a = [];
+    while a.len() < n {
+        a.push(T::default());
+    }
+    a
+}
+
+fn count<T: Eq>(items: Array<T>, x: T) -> Int {
+    var n = 0;
+    var i = 0;
+    while i < items.len() {
+        if items[i] == x { n += 1; }
+        i += 1;
+    }
+    n
+}
+
+fn main() {
+    println(id(1) + id(2));
+    println(id("a"));
+
+    println(5.show());
+    println((-5).show());
+    println("s".show());
+    println(Option::Some(-1).show());
+    println([Option::Some("a"), Option::None].show());
+    println(1.show_twice());
+    println("s".show_twice());
+    println(Show::show(3));
+    println(Int::show(-3));
+
+    println(show_all([1, -1]));
+    println(show_all(["x", "y"]));
+    println(show_all([[1], [2, -2]]));
+
+    // The expected type chooses the impl.
+    let n: Int = Default::default();
+    let s: String = Default::default();
+    let o: Option<Int> = Default::default();
+    let p: Pair<Int, Pair<String, Option<Int>>> = Default::default();
+    println(n);
+    println(s == "");
+    println(o);
+    println(p);
+    let zeros: Array<Int> = defaults(3);
+    println(zeros);
+    let empties: Array<String> = defaults(2);
+    println(empties);
+
+    let pair = Pair::new(1, "one");
+    println(pair.swap());
+    println(pair.swap().swap() == pair);
+    println(Option::Some(1).unwrap_or(2));
+    println(Option::None.unwrap_or(2));
+    println(Option::Some("x").is_some());
+
+    println(count([1, 2, 1], 1));
+    println(count([Option::Some(1), Option::None], Option::None));
+}

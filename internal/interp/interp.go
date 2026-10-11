@@ -44,10 +44,12 @@ type Interp struct {
 	out     io.Writer
 	globals *scope
 	structs map[string]*syntax.StructDecl
-	// poisoned holds the nodes that failed to check. See check.Info.
-	poisoned map[any]*check.Error
-	prog     *syntax.Program
-	depth    int
+	info    *check.Info
+	prog    *syntax.Program
+	depth   int
+	// env binds the type parameters of the running function. Which
+	// implementation a trait method call runs may depend on them.
+	env check.Env
 }
 
 // Run executes the program in src, writing program output to out.
@@ -84,6 +86,9 @@ func run(src []byte, out io.Writer) error {
 	if len(mainFn.Decl.Params) != 0 {
 		return errorf(mainFn.Decl.Pos, "main must not take parameters")
 	}
+	if len(mainFn.Decl.TypeParams) != 0 {
+		return errorf(mainFn.Decl.Pos, "main must not have type parameters")
+	}
 	_, err = in.callFunc(mainFn.Decl.Pos, mainFn, nil)
 	return err
 }
@@ -99,11 +104,11 @@ func load(src []byte, out io.Writer) (*Interp, error) {
 		return nil, info.Fatal[0]
 	}
 	in := &Interp{
-		out:      out,
-		globals:  newScope(nil),
-		structs:  map[string]*syntax.StructDecl{},
-		poisoned: info.Poisoned,
-		prog:     prog,
+		out:     out,
+		globals: newScope(nil),
+		structs: map[string]*syntax.StructDecl{},
+		info:    info,
+		prog:    prog,
 	}
 	in.defineBuiltins()
 	for _, st := range prog.Structs {
@@ -118,7 +123,7 @@ func load(src []byte, out io.Writer) (*Interp, error) {
 // poison returns the static error of node, if any. Evaluating a node that
 // failed to check aborts with its error.
 func (in *Interp) poison(node any) error {
-	if err, ok := in.poisoned[node]; ok {
+	if err, ok := in.info.Poisoned[node]; ok {
 		return err
 	}
 	return nil
@@ -164,7 +169,12 @@ func (in *Interp) callFunc(pos syntax.Pos, fn *FuncValue, args []Value) (Value, 
 		return nil, err
 	}
 	in.depth++
-	defer func() { in.depth-- }()
+	outerEnv := in.env
+	in.env = fn.Env
+	defer func() {
+		in.depth--
+		in.env = outerEnv
+	}()
 
 	sc := newScope(in.globals)
 	for i, param := range decl.Params {
@@ -221,6 +231,10 @@ func (in *Interp) eval(e syntax.Expr, sc *scope) (Value, error) {
 	case *syntax.UnitLit:
 		return UnitValue{}, nil
 	case *syntax.IdentExpr, *syntax.IndexExpr, *syntax.FieldExpr:
+		if ref := in.info.Refs[e]; ref != nil {
+			// A generic function is instantiated where it is named.
+			return in.funcValue(e.Position(), ref)
+		}
 		// The value is copied out of a place.
 		v, err := in.evalRead(e, sc)
 		if err != nil {
@@ -239,6 +253,10 @@ func (in *Interp) eval(e syntax.Expr, sc *scope) (Value, error) {
 		return &ArrayValue{Elems: elems}, nil
 	case *syntax.StructLit:
 		return in.evalStructLit(e, sc)
+	case *syntax.PathExpr:
+		return in.evalPath(e)
+	case *syntax.MatchExpr:
+		return in.evalMatch(e, sc)
 	case *syntax.MethodCallExpr:
 		return in.evalMethodCall(e, sc)
 	case *syntax.UnaryExpr:
@@ -429,6 +447,12 @@ func (in *Interp) evalCall(e *syntax.CallExpr, sc *scope) (Value, error) {
 		return in.callFunc(e.Pos, callee, args)
 	case *BuiltinValue:
 		return callee.Fn(in, e.Pos, args)
+	case *VariantValue:
+		variant := callee.Decl.Variants[callee.Variant]
+		if len(args) != len(variant.Fields) {
+			return nil, errorf(e.Pos, "%s::%s expects %d arguments, got %d", callee.Decl.Name, variant.Name, len(variant.Fields), len(args))
+		}
+		return &EnumValue{Decl: callee.Decl, Variant: callee.Variant, Fields: args}, nil
 	default:
 		return nil, errorf(e.Pos, "cannot call a value of type %s", callee.TypeName())
 	}
@@ -548,6 +572,18 @@ func equal(pos syntax.Pos, x, y Value) (bool, error) {
 			}
 			return true, nil
 		}
+	case *EnumValue:
+		if y, ok := y.(*EnumValue); ok && x.Decl == y.Decl {
+			if x.Variant != y.Variant {
+				return false, nil
+			}
+			for i := range x.Fields {
+				if eq, err := equal(pos, x.Fields[i], y.Fields[i]); err != nil || !eq {
+					return false, err
+				}
+			}
+			return true, nil
+		}
 	case *StructValue:
 		if y, ok := y.(*StructValue); ok && x.Decl == y.Decl {
 			for i := range x.Fields {
@@ -575,4 +611,34 @@ func equal(pos syntax.Pos, x, y Value) (bool, error) {
 		}
 	}
 	return false, errorf(pos, "cannot compare %s and %s", x.TypeName(), y.TypeName())
+}
+
+// funcValue returns the function that ref designates in the running
+// function. For a trait method, this chooses the impl by the types that the
+// type parameters of the running function stand for.
+func (in *Interp) funcValue(pos syntax.Pos, ref *check.Ref) (*FuncValue, error) {
+	f, env, err := in.info.Resolve(ref, in.env)
+	switch {
+	case err == check.ErrNoImpl:
+		return nil, errorf(pos, "no implementation of %s for %v", ref.Trait.Name, check.Subst(ref.Self, in.env))
+	case err != nil:
+		return nil, err
+	}
+	return &FuncValue{Decl: f.Decl, Env: env}, nil
+}
+
+// evalPath evaluates Qual::Name.
+func (in *Interp) evalPath(e *syntax.PathExpr) (Value, error) {
+	ref := in.info.Refs[e]
+	if ref == nil {
+		return nil, errorf(e.Pos, "undefined path %s::%s", e.Qual, e.Name)
+	}
+	if ref.Kind != check.RefVariant {
+		return in.funcValue(e.Pos, ref)
+	}
+	decl := ref.Enum.Decl
+	if len(decl.Variants[ref.Variant].Fields) == 0 {
+		return &EnumValue{Decl: decl, Variant: ref.Variant}, nil
+	}
+	return &VariantValue{Decl: decl, Variant: ref.Variant}, nil
 }
